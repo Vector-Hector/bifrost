@@ -79,10 +79,10 @@ func GetTripFromTransfer(r *RaptorData, rounds *Rounds, round []StopArrival, des
 		stopover := &fptf.Stopover{
 			StopStation: r.GetFptfStop(stop),
 		}
-		if i != 0 {
+		if i != len(path)-1 {
 			stopover.Arrival = r.GetTime(arrival.Arrival)
 		}
-		if i != len(path)-1 {
+		if i != 0 {
 			stopover.Departure = r.GetTime(arrival.Arrival)
 		}
 		stopovers = append(stopovers, stopover)
