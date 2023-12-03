@@ -96,59 +96,6 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 
 	fmt.Println("stops", stopCount)
 
-	/*fmt.Println("building kdtree")
-	stopsTree := kdtree.New(stopsAsPoints)
-
-	fmt.Println("creating transfer graph")
-
-	transferGraph := make([][]Arc, len(stops))
-	for i := range stops {
-		transferGraph[i] = make([]Arc, 0)
-	}
-
-	prog.Reset(uint64(len(stops)))
-
-	for _, fromPoint := range stopsAsPoints {
-		prog.Increment()
-		prog.Print()
-
-		neighbours := stopsTree.KNN(fromPoint, 500)
-
-		from := fromPoint.(*GeoPoint)
-
-		for _, toPoint := range neighbours {
-			to := toPoint.(*GeoPoint)
-
-			if from.VertKey == to.VertKey {
-				continue
-			}
-
-			if !fastDistWithin(from, to, MaxWalkingMs) {
-				break
-			}
-
-			distInKm := Distance(from.Latitude, from.Longitude, to.Latitude, to.Longitude, "K")
-			distInSecs := (distInKm * 1000) / WalkingSpeed
-
-			if distInSecs > MaxWalkingMs {
-				break
-			}
-
-			fromKey := from.VertKey
-			toKey := to.VertKey
-
-			transferGraph[fromKey] = append(transferGraph[fromKey], Arc{
-				Target:   toKey,
-				Distance: uint32(distInSecs),
-			})
-			transferGraph[toKey] = append(transferGraph[toKey], Arc{
-				Target:   fromKey,
-				Distance: uint32(distInSecs),
-			})
-		}
-	}
-
-	fmt.Println("transfer graph", len(transferGraph))*/
 	fmt.Println("converting services")
 
 	serviceCount, err := stream.CountRows(directory + "/calendar.txt")

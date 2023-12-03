@@ -570,12 +570,8 @@ func main() {
 
 	fmt.Println("Raptor data loaded")
 
-	originID := "321307" // "358571"
-	destID := "577958"
-
-	//originID := "476628" // münchen hbf
-	//destID := "170058"   // marienplatz
-	//destID := "193261" // berlin hbf
+	originID := "524224"
+	destID := "416057"
 
 	fmt.Println("Routing from", originID, "to", destID)
 

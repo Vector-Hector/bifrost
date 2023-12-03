@@ -128,12 +128,12 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 
 	// connect stops to street graph using knn
 
-	verticesAsPoints := make([]kdtree.Point, len(r.Vertices)-int(newVerticesStart))
-	for i, v := range r.Vertices[newVerticesStart:] {
+	verticesAsPoints := make([]kdtree.Point, len(r.Vertices))
+	for i, v := range r.Vertices {
 		verticesAsPoints[i] = &GeoPoint{
 			Latitude:  v.Latitude,
 			Longitude: v.Longitude,
-			VertKey:   newVerticesStart + uint64(i),
+			VertKey:   uint64(i),
 		}
 	}
 
@@ -154,15 +154,6 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 		}
 
 		nearest := tree.KNN(stopPoint, 10)
-
-		//if stop.Stop.Id == "321307" {
-		//	fmt.Println("Found stop 321307")
-		//	fmt.Println("Location:", stop.Latitude, stop.Longitude)
-		//	for _, point := range nearest {
-		//		streetVert := point.(*GeoPoint)
-		//		fmt.Println(streetVert.VertKey, streetVert.Latitude, streetVert.Longitude)
-		//	}
-		//}
 
 		for _, point := range nearest {
 			streetVert := point.(*GeoPoint)
