@@ -12,6 +12,7 @@ require (
 )
 
 require (
+	github.com/LdDl/ch v1.7.8 // indirect
 	github.com/RoaringBitmap/roaring v0.4.23 // indirect
 	github.com/artonge/go-csv-tag/v2 v2.2.0 // indirect
 	github.com/blevesearch/go-porterstemmer v1.0.3 // indirect
@@ -42,6 +43,7 @@ require (
 	github.com/modern-go/reflect2 v0.0.0-20180701023420-4b7aa43c6742 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
 	github.com/philhofer/fwd v1.0.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/steveyen/gtreap v0.1.0 // indirect
 	github.com/stretchr/testify v1.8.4 // indirect
 	github.com/tinylib/msgp v1.1.0 // indirect

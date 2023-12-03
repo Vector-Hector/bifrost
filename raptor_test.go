@@ -9,7 +9,7 @@ var RaptorRounds *Rounds
 
 func init() {
 	R = LoadRaptorDataset()
-	RaptorRounds = NewRounds(len(R.Stops))
+	RaptorRounds = NewRounds(len(R.Vertices))
 }
 
 func TestRaptor(t *testing.T) {

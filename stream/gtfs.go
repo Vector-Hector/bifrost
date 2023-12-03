@@ -1,4 +1,4 @@
-package gtfs_stream
+package stream
 
 import (
 	"bufio"
@@ -33,42 +33,42 @@ func CountRows(fileName string) (int, error) {
 }
 
 func IterateStops(fileName string, handler func(int, *gtfs.Stop) bool) error {
-	return iterateCsvFile(fileName, gtfs.Stop{}, func(index int, out *gtfs.Stop) bool {
+	return iterateCsvFile(fileName, ',', gtfs.Stop{}, func(index int, out *gtfs.Stop) bool {
 		return handler(index, out)
 	})
 }
 
 func IterateServices(fileName string, handler func(int, *gtfs.Calendar) bool) error {
-	return iterateCsvFile(fileName, gtfs.Calendar{}, func(index int, out *gtfs.Calendar) bool {
+	return iterateCsvFile(fileName, ',', gtfs.Calendar{}, func(index int, out *gtfs.Calendar) bool {
 		return handler(index, out)
 	})
 }
 
 func IterateCalendarDates(fileName string, handler func(int, *gtfs.CalendarDate) bool) error {
-	return iterateCsvFile(fileName, gtfs.CalendarDate{}, func(index int, out *gtfs.CalendarDate) bool {
+	return iterateCsvFile(fileName, ',', gtfs.CalendarDate{}, func(index int, out *gtfs.CalendarDate) bool {
 		return handler(index, out)
 	})
 }
 
 func IterateRoutes(fileName string, handler func(int, *gtfs.Route) bool) error {
-	return iterateCsvFile(fileName, gtfs.Route{}, func(index int, out *gtfs.Route) bool {
+	return iterateCsvFile(fileName, ',', gtfs.Route{}, func(index int, out *gtfs.Route) bool {
 		return handler(index, out)
 	})
 }
 
 func IterateTrips(fileName string, handler func(int, *gtfs.Trip) bool) error {
-	return iterateCsvFile(fileName, gtfs.Trip{}, func(index int, out *gtfs.Trip) bool {
+	return iterateCsvFile(fileName, ',', gtfs.Trip{}, func(index int, out *gtfs.Trip) bool {
 		return handler(index, out)
 	})
 }
 
 func IterateStopTimes(fileName string, handler func(int, *gtfs.StopTime) bool) error {
-	return iterateCsvFile(fileName, gtfs.StopTime{}, func(index int, out *gtfs.StopTime) bool {
+	return iterateCsvFile(fileName, ',', gtfs.StopTime{}, func(index int, out *gtfs.StopTime) bool {
 		return handler(index, out)
 	})
 }
 
-func iterateCsvFile[T any](fileName string, outInstance T, handler func(int, *T) bool) error {
+func iterateCsvFile[T any](fileName string, comma rune, outInstance T, handler func(int, *T) bool) error {
 	f, err := os.Open(fileName)
 	if err != nil {
 		return err
@@ -77,6 +77,7 @@ func iterateCsvFile[T any](fileName string, outInstance T, handler func(int, *T)
 	defer f.Close()
 
 	r := csv.NewReader(f)
+	r.Comma = comma
 
 	header, err := r.Read()
 	if err != nil {
@@ -114,6 +115,73 @@ func iterateCsvFile[T any](fileName string, outInstance T, handler func(int, *T)
 
 		currentStruct.Set(zeroValue)
 		pos++
+	}
+
+	return nil
+}
+
+func iterateCsvFileStringBuffer(fileName string, comma rune, wantedOrder []string, threadCount int, handler func(StringArr)) error {
+	f, err := os.Open(fileName)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.Comma = comma
+
+	header, err := r.Read()
+	if err != nil {
+		return err
+	}
+
+	headerMap := make(map[string]int)
+	for i, v := range header {
+		headerMap[v] = i
+	}
+
+	reorder := make([]int, len(wantedOrder))
+	for i, v := range wantedOrder {
+		reorder[i] = headerMap[v]
+	}
+
+	// create one reader goroutine and multiple handler goroutines
+	// the reader goroutine reads lines and sends them to the handler goroutines using a channel
+	// the handler goroutines parse the lines and send them to the handler function
+
+	done := make(chan bool)
+	lines := make(chan []string, 500)
+
+	go func() {
+		for {
+			line, err := r.Read()
+			if err != nil {
+				break
+			}
+			lines <- line
+		}
+		close(lines)
+	}()
+
+	for i := 0; i < threadCount; i++ {
+		go func() {
+			currentLine := make(StringArr, len(wantedOrder))
+
+			for line := range lines {
+				for j, v := range reorder {
+					currentLine[j] = line[v]
+				}
+
+				handler(currentLine)
+			}
+
+			done <- true
+		}()
+	}
+
+	for i := 0; i < threadCount; i++ {
+		<-done
 	}
 
 	return nil

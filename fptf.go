@@ -1,38 +1,44 @@
 package main
 
 import (
+	"fmt"
 	fptf "github.com/Vector-Hector/friendly-public-transport-format"
+	util "github.com/Vector-Hector/goutil"
 	"strconv"
 	"time"
 )
 
-func (r *RaptorData) ReconstructJourney(destKey uint32, lastRound int, rounds [][]StopArrival) *fptf.Journey {
+func (r *RaptorData) ReconstructJourney(destKey uint64, lastRound int, rounds *Rounds) *fptf.Journey {
 	// reconstruct path
-	reverseTrips := make([]*fptf.Trip, 0)
+	trips := make([]*fptf.Trip, 0)
 	position := destKey
 
 	for i := lastRound; i > 0; i-- {
-		arr := rounds[i][position]
+		fmt.Println("reconstructing round", i, "at position", position)
+		arr := rounds.Rounds[i][position]
 
 		if arr.Trip == TripIdNoChange {
 			continue
 		}
 
 		if arr.Trip == TripIdTransfer {
-			trip, newPos := GetTripFromTransfer(r, position, arr)
+			fmt.Println("round", i, "is a transfer")
+			trip, newPos := GetTripFromTransfer(r, rounds, rounds.Rounds[i], position)
 			position = newPos
-			reverseTrips = append(reverseTrips, trip)
+			trips = append(trips, trip)
 			continue
 		}
 
-		trip, newPos := GetTripFromTrip(r, rounds[i-1], arr)
+		fmt.Println("round", i, "is a trip")
+		trip, newPos := GetTripFromTrip(r, rounds, rounds.Rounds[i-1], arr)
 		position = newPos
-		reverseTrips = append(reverseTrips, trip)
+		trips = append(trips, trip)
 	}
 
-	trips := make([]*fptf.Trip, len(reverseTrips))
-	for i, trip := range reverseTrips {
-		trips[len(trips)-1-i] = trip
+	// reverse trips
+	for i := len(trips)/2 - 1; i >= 0; i-- {
+		opp := len(trips) - 1 - i
+		trips[i], trips[opp] = trips[opp], trips[i]
 	}
 
 	return &fptf.Journey{
@@ -40,62 +46,102 @@ func (r *RaptorData) ReconstructJourney(destKey uint32, lastRound int, rounds []
 	}
 }
 
-func GetTripFromTransfer(r *RaptorData, destination uint32, arrival StopArrival) (*fptf.Trip, uint32) {
-	origin := arrival.EnterStopOrKey
+func GetTripFromTransfer(r *RaptorData, rounds *Rounds, round []StopArrival, destination uint64) (*fptf.Trip, uint64) {
+	position := destination
+	arrival := round[position]
+	path := make([]uint64, 1)
+	path[0] = position
 
-	originStop := r.GetFptfStop(origin)
-	destStop := r.GetFptfStop(destination)
-	dep := r.GetTime(arrival.DepartureOrRoute)
-	arr := r.GetTime(arrival.Arrival)
+	for {
+		if arrival.Trip != TripIdTransfer {
+			break
+		}
+
+		if !rounds.Exists(&arrival) {
+			panic("transfer trip does not exist")
+		}
+
+		prevPos := arrival.EnterKey
+		prevArr := round[prevPos]
+
+		if prevArr.Arrival > arrival.Arrival {
+			panic("transfer arrival is before enter")
+		}
+
+		position = prevPos
+		arrival = prevArr
+		path = append(path, position)
+	}
+
+	stopovers := make([]*fptf.Stopover, 0, len(path))
+	for i := len(path) - 1; i >= 0; i-- {
+		stop := path[i]
+		stopover := &fptf.Stopover{
+			StopStation: r.GetFptfStop(stop),
+		}
+		if i != 0 {
+			stopover.Arrival = r.GetTime(arrival.Arrival)
+		}
+		if i != len(path)-1 {
+			stopover.Departure = r.GetTime(arrival.Arrival)
+		}
+		stopovers = append(stopovers, stopover)
+	}
+
+	originStop := stopovers[0].StopStation
+	destStop := stopovers[len(stopovers)-1].StopStation
+	dep := stopovers[0].Departure
+	arr := stopovers[len(stopovers)-1].Arrival
 
 	trip := &fptf.Trip{
 		Origin:      originStop,
 		Destination: destStop,
 		Departure:   dep,
 		Arrival:     arr,
-		Stopovers: []*fptf.Stopover{
-			{
-				StopStation: originStop,
-				Departure:   dep,
-			},
-			{
-				StopStation: destStop,
-				Arrival:     arr,
-			},
-		},
-		Mode: fptf.ModeWalking,
+		Stopovers:   stopovers,
+		Mode:        fptf.ModeWalking,
 	}
 
-	return trip, origin
+	return trip, position
 }
 
-func (r *RaptorData) GetFptfStop(stop uint32) *fptf.StopStation {
+func (r *RaptorData) GetFptfStop(stop uint64) *fptf.StopStation {
+	id := ""
+	name := ""
+
+	if stopCtx := r.Vertices[stop].Stop; stopCtx != nil {
+		id = stopCtx.Id
+		name = stopCtx.Name + " / " + strconv.Itoa(int(stop))
+	}
+
 	return &fptf.StopStation{
 		Station: &fptf.Station{
-			Id:   r.Stops[stop].Id,
-			Name: r.Stops[stop].Name + " / " + strconv.Itoa(int(stop)),
+			Id:   id,
+			Name: name,
 			Location: &fptf.Location{
-				Latitude:  r.Stops[stop].Latitude,
-				Longitude: r.Stops[stop].Longitude,
+				Latitude:  r.Vertices[stop].Latitude,
+				Longitude: r.Vertices[stop].Longitude,
 			},
 		},
 	}
 }
 
-func (r *RaptorData) GetTime(seconds uint32) fptf.TimeNullable {
-	t := PivotDate.Add(time.Duration(seconds) * time.Second)
-	return fptf.TimeNullable{Time: t}
+func (r *RaptorData) GetTime(ms uint64) fptf.TimeNullable {
+	return fptf.TimeNullable{
+		Time: time.Unix(int64(ms/1000), int64(ms%1000)*1000000),
+	}
 }
 
-func GetTripFromTrip(r *RaptorData, round []StopArrival, arrival StopArrival) (*fptf.Trip, uint32) {
+func GetTripFromTrip(r *RaptorData, rounds *Rounds, round []StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
 	trip := r.Trips[arrival.Trip]
-	route := r.Routes[arrival.DepartureOrRoute]
+	routeKey := r.TripToRoute[arrival.Trip]
+	route := r.Routes[routeKey]
 
 	enterKey := 0
 
-	for i := int(arrival.EnterStopOrKey) - 1; i >= 0; i-- {
+	for i := int(arrival.EnterKey) - 1; i >= 0; i-- {
 		stop := route.Stops[i]
-		if !round[stop].Exists {
+		if !rounds.Exists(&round[stop]) {
 			continue
 		}
 
@@ -103,29 +149,30 @@ func GetTripFromTrip(r *RaptorData, round []StopArrival, arrival StopArrival) (*
 		break
 	}
 
-	if enterKey == 0 && !round[route.Stops[0]].Exists {
-		panic("no enter key found")
+	if enterKey == 0 && !rounds.Exists(&round[route.Stops[0]]) {
+		util.PrintJSON(arrival)
+		panic(fmt.Sprint("no enter key found for trip ", arrival.Trip, " at route ", routeKey))
 	}
 
-	gtfsRouteKey := r.RaptorToGtfsRoutes[arrival.DepartureOrRoute]
+	gtfsRouteKey := r.RaptorToGtfsRoutes[routeKey]
 	gtfsRoute := r.RouteInformation[gtfsRouteKey]
 	gtfsTrip := r.TripInformation[arrival.Trip]
 
 	routeName := gtfsRoute.ShortName
 
 	originStop := r.GetFptfStop(route.Stops[enterKey])
-	destStop := r.GetFptfStop(route.Stops[arrival.EnterStopOrKey])
+	destStop := r.GetFptfStop(route.Stops[arrival.EnterKey])
 
-	dep := r.GetTime(arrival.DepartureDay*DayInSeconds + trip.StopTimes[enterKey].Departure)
-	arr := r.GetTime(arrival.DepartureDay*DayInSeconds + trip.StopTimes[arrival.EnterStopOrKey].Arrival)
+	dep := r.GetTime(trip.StopTimes[enterKey].DepartureAtDay(arrival.Departure))
+	arr := r.GetTime(trip.StopTimes[arrival.EnterKey].ArrivalAtDay(arrival.Departure))
 
-	stopovers := make([]*fptf.Stopover, 0, int(arrival.EnterStopOrKey)-enterKey+1)
-	for i := enterKey; i <= int(arrival.EnterStopOrKey); i++ {
+	stopovers := make([]*fptf.Stopover, 0, int(arrival.EnterKey)-enterKey+1)
+	for i := enterKey; i <= int(arrival.EnterKey); i++ {
 		stop := route.Stops[i]
 		stopover := &fptf.Stopover{
 			StopStation: r.GetFptfStop(stop),
-			Arrival:     r.GetTime(trip.StopTimes[i].Arrival),
-			Departure:   r.GetTime(trip.StopTimes[i].Departure),
+			Arrival:     r.GetTime(trip.StopTimes[i].ArrivalAtDay(arrival.Departure)),
+			Departure:   r.GetTime(trip.StopTimes[i].DepartureAtDay(arrival.Departure)),
 		}
 		stopovers = append(stopovers, stopover)
 	}

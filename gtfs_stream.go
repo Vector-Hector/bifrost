@@ -5,7 +5,7 @@ import (
 	"github.com/artonge/go-gtfs"
 	"github.com/kyroy/kdtree"
 	"math"
-	gtfs_stream "raptor/gtfs"
+	"raptor/stream"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,7 +16,7 @@ type StopTime struct {
 	Departure uint32
 	Arrival   uint32
 	StopSeq   uint32
-	StopKey   uint32
+	StopKey   uint64
 }
 
 type Progress struct {
@@ -54,36 +54,38 @@ func (p *Progress) ETA() string {
 }
 
 func ReadGtfsData(directory string) (*RaptorData, error) {
-	stopCount, err := gtfs_stream.CountRows(directory + "/stops.txt")
+	stopCount, err := stream.CountRows(directory + "/stops.txt")
 	if err != nil {
 		return nil, err
 	}
 
 	prog := &Progress{}
 
-	stops := make([]*Stop, stopCount)
+	stops := make([]Vertex, stopCount)
 	stopsAsPoints := make([]kdtree.Point, stopCount)
 	stopToRoutes := make([][]StopRoutePair, stopCount)
-	stopsIndex := make(map[string]uint32, stopCount)
+	stopsIndex := make(map[string]uint64, stopCount)
 
 	prog.Reset(uint64(stopCount))
-	err = gtfs_stream.IterateStops(directory+"/stops.txt", func(index int, stop *gtfs.Stop) bool {
+	err = stream.IterateStops(directory+"/stops.txt", func(index int, stop *gtfs.Stop) bool {
 		prog.Increment()
 		prog.Print()
 
-		stops[index] = &Stop{
-			Id:        stop.ID,
-			Name:      stop.Name,
+		stops[index] = Vertex{
+			Stop: &StopContext{
+				Id:   stop.ID,
+				Name: stop.Name,
+			},
 			Longitude: stop.Longitude,
 			Latitude:  stop.Latitude,
 		}
 		stopsAsPoints[index] = &GeoPoint{
 			Latitude:  stop.Longitude,
 			Longitude: stop.Latitude,
-			StopKey:   uint32(index),
+			VertKey:   uint64(index),
 		}
 
-		stopsIndex[stop.ID] = uint32(index)
+		stopsIndex[stop.ID] = uint64(index)
 		stopToRoutes[index] = make([]StopRoutePair, 0)
 		return true
 	})
@@ -94,7 +96,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 
 	fmt.Println("stops", stopCount)
 
-	fmt.Println("building kdtree")
+	/*fmt.Println("building kdtree")
 	stopsTree := kdtree.New(stopsAsPoints)
 
 	fmt.Println("creating transfer graph")
@@ -117,23 +119,23 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 		for _, toPoint := range neighbours {
 			to := toPoint.(*GeoPoint)
 
-			if from.StopKey == to.StopKey {
+			if from.VertKey == to.VertKey {
 				continue
 			}
 
-			if !fastDistWithin(from, to, MaxWalkingSeconds) {
+			if !fastDistWithin(from, to, MaxWalkingMs) {
 				break
 			}
 
 			distInKm := Distance(from.Latitude, from.Longitude, to.Latitude, to.Longitude, "K")
 			distInSecs := (distInKm * 1000) / WalkingSpeed
 
-			if distInSecs > MaxWalkingSeconds {
+			if distInSecs > MaxWalkingMs {
 				break
 			}
 
-			fromKey := from.StopKey
-			toKey := to.StopKey
+			fromKey := from.VertKey
+			toKey := to.VertKey
 
 			transferGraph[fromKey] = append(transferGraph[fromKey], Arc{
 				Target:   toKey,
@@ -146,10 +148,10 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 		}
 	}
 
-	fmt.Println("transfer graph", len(transferGraph))
+	fmt.Println("transfer graph", len(transferGraph))*/
 	fmt.Println("converting services")
 
-	serviceCount, err := gtfs_stream.CountRows(directory + "/calendar.txt")
+	serviceCount, err := stream.CountRows(directory + "/calendar.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -158,13 +160,13 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	servicesIndex := make(map[string]uint32, serviceCount)
 
 	prog.Reset(uint64(serviceCount))
-	err = gtfs_stream.IterateServices(directory+"/calendar.txt", func(index int, calendar *gtfs.Calendar) bool {
+	err = stream.IterateServices(directory+"/calendar.txt", func(index int, calendar *gtfs.Calendar) bool {
 		prog.Increment()
 		prog.Print()
 		services[index] = &Service{
 			Weekdays:          uint8(calendar.Monday) | uint8(calendar.Tuesday)<<1 | uint8(calendar.Wednesday)<<2 | uint8(calendar.Thursday)<<3 | uint8(calendar.Friday)<<4 | uint8(calendar.Saturday)<<5 | uint8(calendar.Sunday)<<6,
-			StartDay:          getDaySincePivotDate(calendar.Start),
-			EndDay:            getDaySincePivotDate(calendar.End),
+			StartDay:          getUnixDay(calendar.Start),
+			EndDay:            getUnixDay(calendar.End),
 			AddedExceptions:   make([]uint32, 0),
 			RemovedExceptions: make([]uint32, 0),
 		}
@@ -180,14 +182,14 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 
 	fmt.Println("iterating calendar dates")
 
-	err = gtfs_stream.IterateCalendarDates(directory+"/calendar_dates.txt", func(index int, calendarDate *gtfs.CalendarDate) bool {
+	err = stream.IterateCalendarDates(directory+"/calendar_dates.txt", func(index int, calendarDate *gtfs.CalendarDate) bool {
 		service := services[servicesIndex[calendarDate.ServiceID]]
 
 		switch calendarDate.ExceptionType {
 		case 1:
-			service.AddedExceptions = append(service.AddedExceptions, getDaySincePivotDate(calendarDate.Date))
+			service.AddedExceptions = append(service.AddedExceptions, getUnixDay(calendarDate.Date))
 		case 2:
-			service.RemovedExceptions = append(service.RemovedExceptions, getDaySincePivotDate(calendarDate.Date))
+			service.RemovedExceptions = append(service.RemovedExceptions, getUnixDay(calendarDate.Date))
 		}
 
 		return true
@@ -209,7 +211,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	fmt.Println("services", len(services))
 	fmt.Println("converting trips")
 
-	routeCount, err := gtfs_stream.CountRows(directory + "/routes.txt")
+	routeCount, err := stream.CountRows(directory + "/routes.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +220,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	routeInformation := make([]*RouteInformation, routeCount)
 
 	prog.Reset(uint64(routeCount))
-	err = gtfs_stream.IterateRoutes(directory+"/routes.txt", func(index int, route *gtfs.Route) bool {
+	err = stream.IterateRoutes(directory+"/routes.txt", func(index int, route *gtfs.Route) bool {
 		prog.Increment()
 		prog.Print()
 
@@ -233,7 +235,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	}
 	fmt.Println()
 
-	tripCount, err := gtfs_stream.CountRows(directory + "/trips.txt")
+	tripCount, err := stream.CountRows(directory + "/trips.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +247,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	tripInformation := make([]*TripInformation, tripCount)
 
 	prog.Reset(uint64(tripCount))
-	err = gtfs_stream.IterateTrips(directory+"/trips.txt", func(index int, trip *gtfs.Trip) bool {
+	err = stream.IterateTrips(directory+"/trips.txt", func(index int, trip *gtfs.Trip) bool {
 		prog.Increment()
 		prog.Print()
 
@@ -266,7 +268,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	fmt.Println("trips", tripCount)
 	fmt.Println("converting stop times")
 
-	stopTimeCount, err := gtfs_stream.CountRows(directory + "/stop_times.txt")
+	stopTimeCount, err := stream.CountRows(directory + "/stop_times.txt")
 	if err != nil {
 		return nil, err
 	}
@@ -274,15 +276,15 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	stopTimes := make([]*StopTime, stopTimeCount)
 
 	prog.Reset(uint64(stopTimeCount))
-	err = gtfs_stream.IterateStopTimes(directory+"/stop_times.txt", func(index int, stopTime *gtfs.StopTime) bool {
+	err = stream.IterateStopTimes(directory+"/stop_times.txt", func(index int, stopTime *gtfs.StopTime) bool {
 		prog.Increment()
 		prog.Print()
 
 		tripKey := procTripsIndex[stopTime.TripID]
 		procTrips[tripKey] = append(procTrips[tripKey], uint32(index))
 		stopTimes[index] = &StopTime{
-			Departure: getTimeInSeconds(stopTime.Departure),
-			Arrival:   getTimeInSeconds(stopTime.Arrival),
+			Departure: getTimeInMs(stopTime.Departure),
+			Arrival:   getTimeInMs(stopTime.Arrival),
 			StopSeq:   stopTime.StopSeq,
 			StopKey:   stopsIndex[stopTime.StopID],
 		}
@@ -349,8 +351,8 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 			arr := stopTime.Arrival
 			dep := stopTime.Departure
 
-			arrDays := arr / DayInSeconds
-			depDays := dep / DayInSeconds
+			arrDays := arr / DayInMs
+			depDays := dep / DayInMs
 
 			if arrDays > maxTripDayLength {
 				maxTripDayLength = arrDays
@@ -387,7 +389,7 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 
 			routeKey := len(routes)
 
-			routeStops := make([]uint32, len(firstTrip))
+			routeStops := make([]uint64, len(firstTrip))
 			for i, stopTimeKey := range firstTrip {
 				stop := stopTimes[stopTimeKey].StopKey
 				routeStops[i] = stop
@@ -451,33 +453,42 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 
 	fmt.Println("routes", len(routes))
 
+	tripToRoute := make([]uint32, len(trips))
+
+	for i, route := range routes {
+		for _, tripKey := range route.Trips {
+			tripToRoute[tripKey] = uint32(i)
+		}
+	}
+
 	return &RaptorData{
 		MaxTripDayLength: maxTripDayLength,
-		Stops:            stops,
+		Vertices:         stops,
 		StopsIndex:       stopsIndex,
 		Routes:           routes,
 		StopToRoutes:     stopRoutePairs,
 		Trips:            trips,
-		TransferGraph:    transferGraph,
-		Reorders:         reorders,
-		Services:         services,
+		//StreetGraph:      transferGraph,
+		Reorders: reorders,
+		Services: services,
 
 		RaptorToGtfsRoutes: raptorToGtfsRoutes,
 		RouteInformation:   routeInformation,
 		TripInformation:    tripInformation,
+		TripToRoute:        tripToRoute,
 	}, nil
 }
 
-func fastDistWithin(from *GeoPoint, to *GeoPoint, maxSecondsDist int) bool {
-	latDiffInSecs := (math.Abs(from.Latitude-to.Latitude) * 111 * 1000) / WalkingSpeed
+func fastDistWithin(from *GeoPoint, to *GeoPoint, maxMsDist uint32) bool {
+	latDiffInMs := (math.Abs(from.Latitude-to.Latitude) * 111 * 1000) / WalkingSpeed
 
-	if latDiffInSecs > float64(maxSecondsDist) {
+	if latDiffInMs > float64(maxMsDist) {
 		return false
 	}
 
 	lonDiffInSecs := (math.Abs(from.Longitude-to.Longitude) * 111 * math.Cos(from.Latitude) * 1000) / WalkingSpeed
 
-	if lonDiffInSecs > float64(maxSecondsDist) {
+	if lonDiffInSecs > float64(maxMsDist) {
 		return false
 	}
 

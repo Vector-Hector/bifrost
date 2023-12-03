@@ -9,17 +9,36 @@ import (
 	"time"
 )
 
-type Stop struct {
-	Id        string
-	Name      string
+type StopContext struct {
+	Id   string
+	Name string
+}
+
+type Vertex struct {
 	Longitude float64
 	Latitude  float64
+	Stop      *StopContext
+}
+
+func (v Vertex) Dimensions() int {
+	return 2
+}
+
+func (v Vertex) Dimension(i int) float64 {
+	switch i {
+	case 0:
+		return v.Latitude
+	case 1:
+		return v.Longitude
+	default:
+		panic("invalid dimension")
+	}
 }
 
 type GeoPoint struct {
 	Latitude  float64
 	Longitude float64
-	StopKey   uint32
+	VertKey   uint64
 }
 
 func (s *GeoPoint) Dimensions() int {
@@ -38,12 +57,20 @@ func (s *GeoPoint) Dimension(i int) float64 {
 }
 
 type Stopover struct {
-	Arrival   uint32 // time since start of day
-	Departure uint32 // time since start of day
+	Arrival   uint32 // ms time since start of day
+	Departure uint32 // ms time since start of day
+}
+
+func (s Stopover) ArrivalAtDay(day uint64) uint64 {
+	return uint64(s.Arrival) + day*uint64(DayInMs)
+}
+
+func (s Stopover) DepartureAtDay(day uint64) uint64 {
+	return uint64(s.Departure) + day*uint64(DayInMs)
 }
 
 type Route struct {
-	Stops []uint32
+	Stops []uint64
 	Trips []uint32
 }
 
@@ -58,8 +85,8 @@ type Trip struct {
 }
 
 type Arc struct {
-	Target   uint32
-	Distance uint32 // in seconds
+	Target   uint64
+	Distance uint32 // in ms
 }
 
 type Service struct {
@@ -79,44 +106,52 @@ type TripInformation struct {
 	Headsign string
 }
 
+type Shortcut struct {
+	Target uint64
+	Via    uint64
+}
+
 type RaptorData struct {
 	MaxTripDayLength uint32 // number of days to go backwards in time (for trips that end after midnight or multiple days later than the start)
 
 	Services []*Service
 
-	Routes        []*Route
-	StopToRoutes  [][]StopRoutePair
-	Trips         []*Trip
-	TransferGraph [][]Arc
+	Routes       []*Route
+	StopToRoutes [][]StopRoutePair
+	Trips        []*Trip
+	StreetGraph  [][]Arc
 
 	Reorders map[uint64][]uint32
 
 	// for reconstructing journeys after routing
-	Stops              []*Stop
-	StopsIndex         map[string]uint32
+	Vertices           []Vertex
+	StopsIndex         map[string]uint64 // gtfs stop id -> vertex index
+	NodesIndex         map[int64]uint64  // csv vertex id -> vertex index
 	RaptorToGtfsRoutes []uint32
 	RouteInformation   []*RouteInformation
 	TripInformation    []*TripInformation
+	Shortcuts          [][]Shortcut
+	TripToRoute        []uint32
 }
 
 func (r *RaptorData) PrintStats() {
-	fmt.Println("stops", len(r.Stops))
+	fmt.Println("stops", len(r.Vertices))
 	fmt.Println("routes", len(r.Routes))
 	fmt.Println("trips", len(r.Trips))
-	fmt.Println("transfer graph", len(r.TransferGraph))
+	fmt.Println("transfer graph", len(r.StreetGraph))
 	fmt.Println("stop to routes", len(r.StopToRoutes))
 	fmt.Println("reorders", len(r.Reorders))
 	fmt.Println("services", len(r.Services))
 	fmt.Println("max trip day length", r.MaxTripDayLength)
 }
 
-func getDaySincePivotDate(date string) uint32 {
+func getUnixDay(date string) uint32 {
 	t, err := time.Parse("20060102", date)
 	if err != nil {
 		panic(err)
 	}
 
-	return uint32(t.Sub(PivotDate).Hours() / 24)
+	return uint32(uint64(t.UnixMilli()) / uint64(DayInMs))
 }
 
 func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
@@ -124,19 +159,21 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 
 	fmt.Println("converting stops")
 
-	stops := make([]*Stop, len(feed.Stops))
+	stops := make([]Vertex, len(feed.Stops))
 	stopToRoutes := make([][]StopRoutePair, len(stops))
-	stopsIndex := make(map[string]uint32, len(feed.Stops))
+	stopsIndex := make(map[string]uint64, len(feed.Stops))
 
 	for i, stop := range feed.Stops {
-		stops[i] = &Stop{
-			Id:        stop.ID,
-			Name:      stop.Name,
+		stops[i] = Vertex{
 			Longitude: stop.Longitude,
 			Latitude:  stop.Latitude,
+			Stop: &StopContext{
+				Id:   stop.ID,
+				Name: stop.Name,
+			},
 		}
 
-		stopsIndex[stop.ID] = uint32(i)
+		stopsIndex[stop.ID] = uint64(i)
 
 		stopToRoutes[i] = make([]StopRoutePair, 0)
 	}
@@ -149,8 +186,8 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 	for i, calendar := range feed.Calendars {
 		services[i] = &Service{
 			Weekdays: uint8(calendar.Monday) | uint8(calendar.Tuesday)<<1 | uint8(calendar.Wednesday)<<2 | uint8(calendar.Thursday)<<3 | uint8(calendar.Friday)<<4 | uint8(calendar.Saturday)<<5 | uint8(calendar.Sunday)<<6,
-			StartDay: getDaySincePivotDate(calendar.Start),
-			EndDay:   getDaySincePivotDate(calendar.End),
+			StartDay: getUnixDay(calendar.Start),
+			EndDay:   getUnixDay(calendar.End),
 		}
 
 		servicesIndex[calendar.ServiceID] = uint32(i)
@@ -161,9 +198,9 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 
 		switch calendarDate.ExceptionType {
 		case 1:
-			service.AddedExceptions = append(service.AddedExceptions, getDaySincePivotDate(calendarDate.Date))
+			service.AddedExceptions = append(service.AddedExceptions, getUnixDay(calendarDate.Date))
 		case 2:
-			service.RemovedExceptions = append(service.RemovedExceptions, getDaySincePivotDate(calendarDate.Date))
+			service.RemovedExceptions = append(service.RemovedExceptions, getUnixDay(calendarDate.Date))
 		}
 	}
 
@@ -257,11 +294,11 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 	for i, trip := range procTrips {
 		st := make([]Stopover, len(trip))
 		for j, stopTimeKey := range trip {
-			arr := getTimeInSeconds(feed.StopsTimes[stopTimeKey].Arrival)
-			dep := getTimeInSeconds(feed.StopsTimes[stopTimeKey].Departure)
+			arr := getTimeInMs(feed.StopsTimes[stopTimeKey].Arrival)
+			dep := getTimeInMs(feed.StopsTimes[stopTimeKey].Departure)
 
-			arrDays := arr / DayInSeconds
-			depDays := dep / DayInSeconds
+			arrDays := arr / DayInMs
+			depDays := dep / DayInMs
 
 			if arrDays > maxTripDayLength {
 				maxTripDayLength = arrDays
@@ -272,8 +309,8 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 			}
 
 			st[j] = Stopover{
-				Arrival:   arr,
-				Departure: dep,
+				Arrival:   uint32(arr),
+				Departure: uint32(dep),
 			}
 		}
 
@@ -298,7 +335,7 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 
 			routeKey := len(routes)
 
-			routeStops := make([]uint32, len(firstTrip))
+			routeStops := make([]uint64, len(firstTrip))
 			for i, stopTimeKey := range firstTrip {
 				stop := stopsIndex[feed.StopsTimes[stopTimeKey].StopID]
 				routeStops[i] = stop
@@ -361,7 +398,7 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 	}
 
 	fmt.Println("routes", len(routes))
-	fmt.Println("creating transfer graph")
+	/*fmt.Println("creating transfer graph")
 
 	transferGraph := make([][]Arc, len(stops))
 	for i := range stops {
@@ -375,7 +412,7 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 			distInKm := Distance(from.Latitude, from.Longitude, to.Latitude, to.Longitude, "K")
 			distInSecs := (distInKm * 1000) / WalkingSpeed
 
-			if distInSecs > MaxWalkingSeconds {
+			if distInSecs > MaxWalkingMs {
 				continue
 			}
 
@@ -390,7 +427,7 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 		}
 	}
 
-	fmt.Println("transfer graph", len(transferGraph))
+	fmt.Println("transfer graph", len(transferGraph))*/
 	fmt.Println("creating route information")
 
 	routeInformation := make([]*RouteInformation, len(feed.Routes))
@@ -415,19 +452,29 @@ func GtfsToRaptorData(feed *gtfs.GTFS) *RaptorData {
 
 	return &RaptorData{
 		MaxTripDayLength: maxTripDayLength,
-		Stops:            stops,
+		Vertices:         stops,
 		StopsIndex:       stopsIndex,
 		Routes:           routes,
 		StopToRoutes:     stopRoutePairs,
 		Trips:            trips,
-		TransferGraph:    transferGraph,
-		Reorders:         reorders,
-		Services:         services,
+		//StreetGraph:    transferGraph,
+		Reorders: reorders,
+		Services: services,
 
 		RaptorToGtfsRoutes: raptorToGtfsRoutes,
 		RouteInformation:   routeInformation,
 		TripInformation:    tripInformation,
 	}
+}
+
+func DistanceMs(from *Vertex, to *Vertex) uint32 {
+	distInKm := Distance(from.Latitude, from.Longitude, to.Latitude, to.Longitude, "K")
+	distInMs := (distInKm * 1000) / WalkingSpeed
+	res := uint32(math.Ceil(distInMs))
+	if res == 0 {
+		return 1
+	}
+	return res
 }
 
 // https://www.geodatasource.com/developers/go

@@ -14,42 +14,41 @@ import (
 )
 
 const TransferLimit = 4
-const TransferPaddingSeconds = 0 // only search for trips, padded a bit after transitioning
-const WalkingSpeed = 0.8         // in meters per second
-const MaxWalkingSeconds = 60 * 5 // duration of walks not allowed to be higher than this when transferring
+const TransferPaddingSeconds = 0                       // only search for trips, padded a bit after transitioning
+const WalkingSpeed = 0.8 * 0.001                       // in meters per ms
+const MaxWalkingMs uint32 = 60 * 1000 * 15             // duration of walks not allowed to be higher than this when transferring
+const MaxStopsConnectionSeconds uint32 = 60 * 1000 * 1 // max length of added arcs between stops and street graph in deciseconds
 
-const GtfsPath = "data/germany/gtfs"
-const RaptorPath = "data/germany/raptor.raptor"
-const IndexPath = "data/germany/index.bleve"
+const GtfsPath = "data/mvv/gtfs"
+const StreetPath = "data/mvv/oberbayern"
+const RaptorPath = "data/mvv/raptor.raptor"
+const IndexPath = "data/mvv/index.bleve"
 
-const DayInSeconds uint32 = 24 * 60 * 60
-
-var PivotDate, _ = time.Parse(time.RFC3339, "2023-01-02T00:00:00Z") // must be a monday
+const DayInMs uint32 = 24 * 60 * 60 * 1000
 
 const (
 	TripIdTransfer = 0xffffffff
 	TripIdNoChange = 0xfffffffe
 	TripIdOrigin   = 0xfffffffd
 
-	ArrivalTimeNotReached = 0xffffffff
+	ArrivalTimeNotReached uint64 = 0xffffffffffffffff
 )
 
 type StopArrival struct {
-	Arrival uint32
+	Arrival uint64 // arrival time in unix ms
 	Trip    uint32 // trip id, 0xffffffff specifies a transfer, 0xfffffffe specifies no change compared to previous round
 
-	EnterStopOrKey   uint32 // stop id for transfers, stop sequence key in route for trips
-	DepartureOrRoute uint32 // departure time for transfers, route id for trips
-	DepartureDay     uint32 // day of trip departure
+	EnterKey  uint64 // stop sequence key in route for trips, vertex key for transfers
+	Departure uint64 // departure day for trips, departure time in unix ms for transfers
 
-	Exists bool
+	ExistsSession uint64 // session id of the last session this stop arrival existed in
 }
 
-func timeToSeconds(day time.Time) uint32 {
-	return uint32(day.Sub(PivotDate).Seconds())
+func timeToSeconds(day time.Time) uint64 {
+	return uint64(day.UnixMilli())
 }
 
-func getTimeInSeconds(timeStr string) uint32 {
+func getTimeInMs(timeStr string) uint32 {
 	parts := strings.Split(timeStr, ":")
 	hours, err := strconv.Atoi(parts[0])
 	if err != nil {
@@ -67,16 +66,17 @@ func getTimeInSeconds(timeStr string) uint32 {
 	}
 
 	totalSeconds := seconds + minutes*60 + hours*60*60
-	return uint32(totalSeconds)
+	return uint32(totalSeconds) * 1000
 }
 
-func getTimeString(seconds uint32) string {
-	seconds = seconds % (24 * 60 * 60) // make sure it's within a day
+func getTimeString(ms uint64) string {
+	ms = ms % (24 * 60 * 60 * 1000) // make sure it's within a day
 
-	hours := seconds / (60 * 60)
-	seconds -= hours * 60 * 60
-	minutes := seconds / 60
-	seconds -= minutes * 60
+	hours := ms / (60 * 60 * 1000)
+	ms -= hours * 60 * 60 * 1000
+	minutes := ms / (60 * 1000)
+	ms -= minutes * 60 * 1000
+	seconds := ms / 1000
 
 	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 }
@@ -85,20 +85,20 @@ func NewRound(cap int) []StopArrival {
 	return make([]StopArrival, cap)
 }
 
-func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint32, current int, debug bool) {
+func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current int, debug bool) {
 	t := time.Now()
 
 	round := rounds.Rounds[current]
 	next := rounds.Rounds[current+1]
 
 	for stop, stopArr := range round {
-		if !stopArr.Exists {
+		if !rounds.Exists(&stopArr) {
 			continue
 		}
 		next[stop] = StopArrival{
-			Arrival: stopArr.Arrival,
-			Trip:    TripIdNoChange,
-			Exists:  true,
+			Arrival:       stopArr.Arrival,
+			Trip:          TripIdNoChange,
+			ExistsSession: rounds.CurrentSessionId,
 		}
 	}
 
@@ -162,22 +162,21 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint32, current 
 			numVisited++
 
 			if trip != nil {
-				arr := trip.StopTimes[stopSeqKey].Arrival + departureDay*DayInSeconds
+				arr := trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))
 				if arr < rounds.EarliestArrivals[stopKey] && arr < rounds.EarliestArrivals[target] {
 					next[stopKey] = StopArrival{
-						Arrival:          arr,
-						Trip:             tripKey,
-						DepartureOrRoute: routeKey,
-						EnterStopOrKey:   stopSeqKey,
-						DepartureDay:     departureDay,
-						Exists:           true,
+						Arrival:       arr,
+						Trip:          tripKey,
+						EnterKey:      uint64(stopSeqKey),
+						Departure:     uint64(departureDay),
+						ExistsSession: rounds.CurrentSessionId,
 					}
 					rounds.MarkedStops[stopKey] = true
 					rounds.EarliestArrivals[stopKey] = arr
 				}
 			}
 
-			if round[stopKey].Exists && (trip == nil || round[stopKey].Arrival <= trip.StopTimes[stopSeqKey].Departure+departureDay*DayInSeconds) {
+			if rounds.Exists(&round[stopKey]) && (trip == nil || round[stopKey].Arrival <= trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))) {
 				et, key, depDay := r.EarliestTrip(routeKey, stopSeqKey, round[stopKey].Arrival+TransferPaddingSeconds)
 				if et != nil {
 					trip = et
@@ -209,7 +208,11 @@ func (r *RaptorData) tripRunsOnDay(trip *Trip, day uint32) bool {
 		return true
 	}
 
-	weekday := day % 7
+	// day is relative to unix epoch, which was a thursday
+	// our weekdays are relative to monday, so we need to add 4 to the day
+
+	weekday := (day + 4) % 7
+
 	if (service.Weekdays & (1 << weekday)) == 0 {
 		return false
 	}
@@ -242,12 +245,12 @@ func binarySearchDays(days []uint32, day uint32) int {
 	return left
 }
 
-func (r *RaptorData) EarliestTrip(routeKey uint32, stopSeqKey uint32, minDeparture uint32) (*Trip, uint32, uint32) {
-	day := minDeparture / DayInSeconds
-	minDepartureInDay := minDeparture % DayInSeconds
+func (r *RaptorData) EarliestTrip(routeKey uint32, stopSeqKey uint32, minDeparture uint64) (*Trip, uint32, uint32) {
+	day := uint32(minDeparture / uint64(DayInMs))
+	minDepartureInDay := uint32(minDeparture % uint64(DayInMs))
 
 	for i := uint32(0); i <= r.MaxTripDayLength; i++ {
-		trip, key := r.earliestTripInDay(routeKey, stopSeqKey, minDepartureInDay+i*DayInSeconds, day)
+		trip, key := r.earliestTripInDay(routeKey, stopSeqKey, minDepartureInDay+i*DayInMs, day)
 		if trip != nil {
 			return trip, key, day
 		}
@@ -352,65 +355,6 @@ func (r *RaptorData) earliestTripBinarySearchReordered(route *Route, stopSeqKey 
 	return r.earliestTripBinarySearchReordered(route, stopSeqKey, minDepartureInDay, day, reorder, left, mid)
 }
 
-func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
-	round := rounds.Rounds[current]
-	next := rounds.Rounds[current+1]
-
-	for stop, t := range round {
-		if !t.Exists {
-			continue
-		}
-		next[stop] = StopArrival{
-			Arrival: t.Arrival,
-			Trip:    TripIdNoChange,
-			Exists:  true,
-		}
-	}
-
-	for stop, marked := range rounds.MarkedStopsForTransfer {
-		if !marked {
-			continue
-		}
-		if !round[stop].Exists {
-			continue
-		}
-		arrivalAtStop := round[stop]
-		transfers := r.TransferGraph[stop]
-
-		for _, transfer := range transfers {
-			arrival := arrivalAtStop.Arrival + transfer.Distance
-
-			old := next[transfer.Target]
-			if !old.Exists {
-				next[transfer.Target] = StopArrival{
-					Arrival:          arrival,
-					Trip:             TripIdTransfer,
-					EnterStopOrKey:   uint32(stop),
-					DepartureOrRoute: arrivalAtStop.Arrival,
-					Exists:           true,
-				}
-				rounds.MarkedStops[transfer.Target] = true
-				rounds.EarliestArrivals[transfer.Target] = arrival
-				continue
-			}
-
-			if arrival >= old.Arrival {
-				continue
-			}
-
-			next[transfer.Target] = StopArrival{
-				Arrival:          arrival,
-				Trip:             TripIdTransfer,
-				EnterStopOrKey:   uint32(stop),
-				DepartureOrRoute: arrivalAtStop.Arrival,
-				Exists:           true,
-			}
-			rounds.MarkedStops[transfer.Target] = true
-			rounds.EarliestArrivals[transfer.Target] = arrival
-		}
-	}
-}
-
 func ReadRaptorFile(fileName string) *RaptorData {
 	f, err := os.Open(fileName)
 	if err != nil {
@@ -495,15 +439,10 @@ func LoadRaptorDataset() *RaptorData {
 		panic(err)
 	}
 
-	//feed, err := gtfs.Load(GtfsPath, nil)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//
-	//fmt.Println("reading gtfs took", time.Since(t))
-	//t = time.Now()
-	//
-	//r := GtfsToRaptorData(feed)
+	err = ReadStreetData(r, StreetPath)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println("converting gtfs to raptor data took", time.Since(t))
 	fmt.Println("writing raptor data")
@@ -526,7 +465,7 @@ func CountMarkedStops(marked []bool) int {
 	return count
 }
 
-func runRaptor(r *RaptorData, rounds *Rounds, originKey uint32, destKey uint32, debug bool) {
+func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, debug bool) {
 	t := time.Now()
 
 	rounds.Reset()
@@ -550,11 +489,11 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint32, destKey uint32, 
 
 	calcStart := time.Now()
 
-	rounds.Rounds[0][originKey] = StopArrival{Arrival: uint32(departure), Trip: TripIdOrigin, Exists: true}
+	rounds.Rounds[0][originKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin, ExistsSession: rounds.CurrentSessionId}
 
 	rounds.MarkedStops[originKey] = true
 
-	rounds.EarliestArrivals[originKey] = uint32(departure)
+	rounds.EarliestArrivals[originKey] = departure
 
 	lastRound := 0
 
@@ -617,7 +556,7 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint32, destKey uint32, 
 
 		fmt.Println("Destination reached after", (float64(arrival)-float64(departure))/60, "minutes. dep", getTimeString(departure), "/", departure, ", arr", getTimeString(arrival), "/", arrival)
 
-		journey := r.ReconstructJourney(destKey, lastRound, rounds.Rounds)
+		journey := r.ReconstructJourney(destKey, lastRound, rounds)
 
 		fmt.Println("Journey:")
 		util.PrintJSON(journey)
@@ -625,13 +564,32 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint32, destKey uint32, 
 }
 
 func main() {
+	fmt.Println("Loading raptor data")
 	r := LoadRaptorDataset()
 
-	originID := "476628" // münchen hbf
-	destID := "170058"   // marienplatz
+	fmt.Println("Raptor data loaded")
+
+	originID := "321307" // "358571"
+	destID := "577958"
+
+	//originID := "476628" // münchen hbf
+	//destID := "170058"   // marienplatz
 	//destID := "193261" // berlin hbf
 
-	rounds := NewRounds(len(r.StopsIndex))
+	fmt.Println("Routing from", originID, "to", destID)
 
-	runRaptor(r, rounds, r.StopsIndex[originID], r.StopsIndex[destID], true)
+	rounds := NewRounds(len(r.Vertices))
+
+	originKey := r.StopsIndex[originID]
+	destKey := r.StopsIndex[destID]
+
+	fmt.Println("origin key", originKey)
+	fmt.Println("dest key", destKey)
+
+	t := time.Now()
+
+	runRaptor(r, rounds, originKey, destKey, true)
+
+	fmt.Println("Routing took", time.Since(t))
+
 }
