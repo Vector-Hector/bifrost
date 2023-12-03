@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	util "github.com/Vector-Hector/goutil"
-	"github.com/artonge/go-gtfs"
-	"github.com/blevesearch/bleve"
 	"github.com/klauspost/compress/zstd"
 	"os"
 	"strconv"
@@ -22,7 +20,6 @@ const MaxStopsConnectionSeconds uint32 = 60 * 1000 * 1 // max length of added ar
 const GtfsPath = "data/mvv/gtfs"
 const StreetPath = "data/mvv/oberbayern"
 const RaptorPath = "data/mvv/raptor.raptor"
-const IndexPath = "data/mvv/index.bleve"
 
 const DayInMs uint32 = 24 * 60 * 60 * 1000
 
@@ -81,10 +78,6 @@ func getTimeString(ms uint64) string {
 	return fmt.Sprintf("%02d:%02d:%02d", hours, minutes, seconds)
 }
 
-func NewRound(cap int) []StopArrival {
-	return make([]StopArrival, cap)
-}
-
 func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current int, debug bool) {
 	t := time.Now()
 
@@ -92,7 +85,7 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 	next := rounds.Rounds[current+1]
 
 	for stop, stopArr := range round {
-		if !rounds.Exists(&stopArr) {
+		if !rounds.Exists(round, stop) {
 			continue
 		}
 		next[stop] = StopArrival{
@@ -137,7 +130,7 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 			rounds.Queue[pair.Route] = pair.StopKeyInTrip
 		}
 
-		rounds.MarkedStops[stop] = false
+		delete(rounds.MarkedStops, stop)
 	}
 
 	if debug {
@@ -163,7 +156,10 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 
 			if trip != nil {
 				arr := trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))
-				if arr < rounds.EarliestArrivals[stopKey] && arr < rounds.EarliestArrivals[target] {
+				ea, ok := rounds.EarliestArrivals[stopKey]
+				targetEa, targetOk := rounds.EarliestArrivals[target]
+
+				if (!ok || arr < ea) && (!targetOk || arr < targetEa) {
 					next[stopKey] = StopArrival{
 						Arrival:       arr,
 						Trip:          tripKey,
@@ -176,7 +172,7 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 				}
 			}
 
-			if rounds.Exists(&round[stopKey]) && (trip == nil || round[stopKey].Arrival <= trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))) {
+			if rounds.Exists(round, stopKey) && (trip == nil || round[stopKey].Arrival <= trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))) {
 				et, key, depDay := r.EarliestTrip(routeKey, stopSeqKey, round[stopKey].Arrival+TransferPaddingSeconds)
 				if et != nil {
 					trip = et
@@ -398,24 +394,6 @@ func WriteRaptorFile(fileName string, r *RaptorData) {
 	if err != nil {
 		panic(err)
 	}
-
-}
-
-func GetIndex(fileName string, feed *gtfs.GTFS) bleve.Index {
-	_, err := os.Stat(fileName)
-	if os.IsNotExist(err) {
-		return CreateIndex(fileName, feed)
-	}
-	if err != nil {
-		panic(err)
-	}
-
-	index, err := bleve.Open(fileName)
-	if err != nil {
-		panic(err)
-	}
-
-	return index
 }
 
 func LoadRaptorDataset() *RaptorData {
@@ -455,7 +433,7 @@ func LoadRaptorDataset() *RaptorData {
 	return r
 }
 
-func CountMarkedStops(marked []bool) int {
+func CountMarkedStops(marked map[uint64]bool) int {
 	count := 0
 	for _, isMarked := range marked {
 		if isMarked {
@@ -468,7 +446,7 @@ func CountMarkedStops(marked []bool) int {
 func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, debug bool) {
 	t := time.Now()
 
-	rounds.Reset()
+	rounds.NewSession()
 
 	if debug {
 		fmt.Println("resetting rounds took", time.Since(t))
@@ -523,7 +501,14 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 			rounds.MarkedStops[originKey] = true
 		}
 
-		copy(rounds.MarkedStopsForTransfer, rounds.MarkedStops)
+		if debug {
+			debugExistentStops(rounds.Rounds[ttsKey], rounds.CurrentSessionId)
+		}
+
+		//copy(rounds.MarkedStopsForTransfer, rounds.MarkedStops)
+		for stop, marked := range rounds.MarkedStops {
+			rounds.MarkedStopsForTransfer[stop] = marked
+		}
 
 		r.StopTimesForKthTransfer(rounds, ttsKey+1)
 
@@ -533,6 +518,10 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 
 		if debug {
 			fmt.Println("Marked", CountMarkedStops(rounds.MarkedStops), "stops in total in round", k)
+		}
+
+		if debug {
+			debugExistentStops(rounds.Rounds[ttsKey+1], rounds.CurrentSessionId)
 		}
 
 		if CountMarkedStops(rounds.MarkedStops) == 0 {
@@ -561,6 +550,18 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 		fmt.Println("Journey:")
 		util.PrintJSON(journey)
 	}
+}
+
+func debugExistentStops(round map[uint64]StopArrival, sessionId uint64) {
+	numExisting := 0
+	for _, stop := range round {
+		if stop.ExistsSession == sessionId {
+			numExisting++
+		}
+	}
+	fmt.Println("num existing stops", numExisting)
+	fmt.Println("num stops", len(round))
+	fmt.Println("ratio", float64(numExisting)/float64(len(round)))
 }
 
 func main() {

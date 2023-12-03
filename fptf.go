@@ -46,7 +46,7 @@ func (r *RaptorData) ReconstructJourney(destKey uint64, lastRound int, rounds *R
 	}
 }
 
-func GetTripFromTransfer(r *RaptorData, rounds *Rounds, round []StopArrival, destination uint64) (*fptf.Trip, uint64) {
+func GetTripFromTransfer(r *RaptorData, rounds *Rounds, round map[uint64]StopArrival, destination uint64) (*fptf.Trip, uint64) {
 	position := destination
 	arrival := round[position]
 	path := make([]uint64, 1)
@@ -57,7 +57,7 @@ func GetTripFromTransfer(r *RaptorData, rounds *Rounds, round []StopArrival, des
 			break
 		}
 
-		if !rounds.Exists(&arrival) {
+		if !rounds.Exists(round, position) {
 			panic("transfer trip does not exist")
 		}
 
@@ -132,7 +132,7 @@ func (r *RaptorData) GetTime(ms uint64) fptf.TimeNullable {
 	}
 }
 
-func GetTripFromTrip(r *RaptorData, rounds *Rounds, round []StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
+func GetTripFromTrip(r *RaptorData, rounds *Rounds, round map[uint64]StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
 	trip := r.Trips[arrival.Trip]
 	routeKey := r.TripToRoute[arrival.Trip]
 	route := r.Routes[routeKey]
@@ -141,7 +141,7 @@ func GetTripFromTrip(r *RaptorData, rounds *Rounds, round []StopArrival, arrival
 
 	for i := int(arrival.EnterKey) - 1; i >= 0; i-- {
 		stop := route.Stops[i]
-		if !rounds.Exists(&round[stop]) {
+		if !rounds.Exists(round, stop) {
 			continue
 		}
 
@@ -149,7 +149,7 @@ func GetTripFromTrip(r *RaptorData, rounds *Rounds, round []StopArrival, arrival
 		break
 	}
 
-	if enterKey == 0 && !rounds.Exists(&round[route.Stops[0]]) {
+	if enterKey == 0 && !rounds.Exists(round, route.Stops[0]) {
 		util.PrintJSON(arrival)
 		panic(fmt.Sprint("no enter key found for trip ", arrival.Trip, " at route ", routeKey))
 	}

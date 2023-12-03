@@ -41,7 +41,7 @@ func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
 	next := rounds.Rounds[current+1]
 
 	for stop, t := range round {
-		if !rounds.Exists(&t) {
+		if !rounds.Exists(round, stop) {
 			continue
 		}
 		next[stop] = StopArrival{
@@ -59,15 +59,17 @@ func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
 		if !marked {
 			continue
 		}
-		if !rounds.Exists(&next[stop]) {
+		if !rounds.Exists(next, stop) {
 			continue
 		}
 
 		heap.Push(&queue, &dijkstraNode{
 			Arrival:  next[stop].Arrival,
-			Vertex:   uint64(stop),
+			Vertex:   stop,
 			WalkTime: 0,
 		})
+
+		delete(rounds.MarkedStopsForTransfer, stop)
 	}
 
 	for queue.Len() > 0 {
@@ -85,7 +87,7 @@ func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
 
 			old := next[arc.Target]
 
-			if rounds.Exists(&old) && arrival >= old.Arrival {
+			if rounds.Exists(next, arc.Target) && arrival >= old.Arrival {
 				continue
 			}
 
