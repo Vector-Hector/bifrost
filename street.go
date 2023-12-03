@@ -95,7 +95,7 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 		return err
 	}
 
-	shortcuts := make([][]Shortcut, vertexCount)
+	r.Shortcuts = make([][]Shortcut, vertexCount)
 
 	err = stream.IterateShortcuts(shortcutsFilePath, threadCount, func(shortcut stream.StringArr) {
 		from := r.NodesIndex[shortcut.GetInt(stream.ShortcutFromVertexID)]
@@ -114,7 +114,7 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 			Target:   to,
 			Distance: dist,
 		})
-		shortcuts[from] = append(shortcuts[from], Shortcut{
+		r.Shortcuts[from] = append(r.Shortcuts[from], Shortcut{
 			Target: to,
 			Via:    via,
 		})
