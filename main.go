@@ -85,9 +85,6 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 	next := rounds.Rounds[current+1]
 
 	for stop, stopArr := range round {
-		if !rounds.Exists(round, stop) {
-			continue
-		}
 		next[stop] = StopArrival{
 			Arrival:       stopArr.Arrival,
 			Trip:          TripIdNoChange,
@@ -111,11 +108,7 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 	}
 
 	// add routes to queue
-	for stop, marked := range rounds.MarkedStops {
-		if !marked {
-			continue
-		}
-
+	for stop := range rounds.MarkedStops {
 		for _, pair := range r.StopToRoutes[stop] {
 			enter, ok := rounds.Queue[pair.Route]
 			if !ok {
@@ -172,8 +165,10 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 				}
 			}
 
-			if rounds.Exists(round, stopKey) && (trip == nil || round[stopKey].Arrival <= trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))) {
-				et, key, depDay := r.EarliestTrip(routeKey, stopSeqKey, round[stopKey].Arrival+TransferPaddingSeconds)
+			sa, ok := round[stopKey]
+
+			if ok && (trip == nil || sa.Arrival <= trip.StopTimes[stopSeqKey].ArrivalAtDay(uint64(departureDay))) {
+				et, key, depDay := r.EarliestTrip(routeKey, stopSeqKey, sa.Arrival+TransferPaddingSeconds)
 				if et != nil {
 					trip = et
 					tripKey = key
@@ -555,7 +550,7 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 
 		fmt.Println("max tts size", len(rounds.Rounds[lastRound]))
 
-		fmt.Println("Destination reached after", (float64(arrival)-float64(departure))/60, "minutes. dep", getTimeString(departure), "/", departure, ", arr", getTimeString(arrival), "/", arrival)
+		fmt.Println("Destination reached after", time.UnixMilli(int64(arrival)).Sub(time.UnixMilli(int64(departure))), ". dep", getTimeString(departure), "/", departure, ", arr", getTimeString(arrival), "/", arrival)
 
 		journey := r.ReconstructJourney(destKey, lastRound, rounds)
 

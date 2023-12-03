@@ -1,9 +1,5 @@
 package main
 
-import (
-	"math"
-)
-
 type Rounds struct {
 	Rounds                 []map[uint64]StopArrival
 	MarkedStops            map[uint64]bool
@@ -50,12 +46,6 @@ func (r *Rounds) NewSession() {
 	for k := range r.Queue {
 		delete(r.Queue, k)
 	}
-
-	r.CurrentSessionId++
-
-	if r.CurrentSessionId >= math.MaxUint64 {
-		r.CurrentSessionId = 1
-	}
 }
 
 func (r *Rounds) ResetRounds() {
@@ -73,12 +63,4 @@ func (r *Rounds) ResetRounds() {
 	for i := 0; i < len(r.Rounds); i++ {
 		<-done
 	}
-}
-
-func (r *Rounds) Exists(round map[uint64]StopArrival, stop uint64) bool {
-	sa, ok := round[stop]
-	if !ok {
-		return false
-	}
-	return sa.ExistsSession == r.CurrentSessionId
 }
