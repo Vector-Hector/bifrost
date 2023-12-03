@@ -15,6 +15,10 @@ func (r *RaptorData) ReconstructJourney(destKey uint64, lastRound int, rounds *R
 
 	for i := lastRound; i > 0; i-- {
 		fmt.Println("reconstructing round", i, "at position", position)
+		if !rounds.Exists(rounds.Rounds[i], position) {
+			panic("position does not exist in round")
+		}
+
 		arr := rounds.Rounds[i][position]
 
 		if arr.Trip == TripIdNoChange {

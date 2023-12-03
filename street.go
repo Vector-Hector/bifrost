@@ -153,7 +153,7 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 			VertKey:   uint64(i),
 		}
 
-		nearest := tree.KNN(stopPoint, 10)
+		nearest := tree.KNN(stopPoint, 30)
 
 		for _, point := range nearest {
 			streetVert := point.(*GeoPoint)

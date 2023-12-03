@@ -2,9 +2,11 @@ package stream
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/csv"
 	"fmt"
 	"github.com/artonge/go-gtfs"
+	"io"
 	"os"
 	"reflect"
 	"strconv"
@@ -76,6 +78,12 @@ func iterateCsvFile[T any](fileName string, comma rune, outInstance T, handler f
 
 	defer f.Close()
 
+	return iterateCsvReader(f, comma, outInstance, handler)
+}
+
+func iterateCsvReader[T any](f io.Reader, comma rune, outInstance T, handler func(int, *T) bool) error {
+	f = skipBOM(f)
+
 	r := csv.NewReader(f)
 	r.Comma = comma
 
@@ -127,6 +135,11 @@ func iterateCsvFileStringBuffer(fileName string, comma rune, wantedOrder []strin
 	}
 
 	defer f.Close()
+
+	return iterateCsvReaderStringBuffer(f, comma, wantedOrder, threadCount, handler)
+}
+func iterateCsvReaderStringBuffer(f io.Reader, comma rune, wantedOrder []string, threadCount int, handler func(StringArr)) error {
+	f = skipBOM(f)
 
 	r := csv.NewReader(f)
 	r.Comma = comma
@@ -185,6 +198,24 @@ func iterateCsvFileStringBuffer(fileName string, comma rune, wantedOrder []strin
 	}
 
 	return nil
+}
+
+// Skip the Byte Order Mark (BOM) if it exists.
+// @param file: the io.Reader to read from.
+func skipBOM(file io.Reader) io.Reader {
+	// Read the first 3 bytes.
+	bom := make([]byte, 3)
+	_, err := file.Read(bom)
+	if err != nil {
+		return file
+	}
+
+	// If the first 3 bytes are not the BOM, reset the reader.
+	if bom[0] != 0xEF || bom[1] != 0xBB || bom[2] != 0xBF {
+		return io.MultiReader(bytes.NewReader(bom), file)
+	}
+
+	return file
 }
 
 func readLine(line []string, headerMap map[string]int, out reflect.Value) error {

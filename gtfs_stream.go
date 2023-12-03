@@ -247,6 +247,10 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 	tripRoutes := make([]map[string][]uint32, routeCount)
 
 	for tripKey, trip := range procTrips {
+		if len(trip) == 0 {
+			continue
+		}
+
 		sort.Slice(trip, func(i, j int) bool {
 			stI := stopTimes[trip[i]]
 			stJ := stopTimes[trip[j]]
@@ -292,6 +296,10 @@ func ReadGtfsData(directory string) (*RaptorData, error) {
 
 	trips := make([]*Trip, tripCount)
 	for i, trip := range procTrips {
+		if len(trip) == 0 {
+			continue
+		}
+
 		st := make([]Stopover, len(trip))
 		for j, stopTimeKey := range trip {
 			stopTime := stopTimes[stopTimeKey]

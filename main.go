@@ -15,7 +15,7 @@ const TransferLimit = 4
 const TransferPaddingSeconds = 0                       // only search for trips, padded a bit after transitioning
 const WalkingSpeed = 0.8 * 0.001                       // in meters per ms
 const MaxWalkingMs uint32 = 60 * 1000 * 15             // duration of walks not allowed to be higher than this when transferring
-const MaxStopsConnectionSeconds uint32 = 60 * 1000 * 1 // max length of added arcs between stops and street graph in deciseconds
+const MaxStopsConnectionSeconds uint32 = 60 * 1000 * 5 // max length of added arcs between stops and street graph in deciseconds
 
 const GtfsPath = "data/mvv/gtfs"
 const StreetPath = "data/mvv/oberbayern"
@@ -453,7 +453,7 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 		t = time.Now()
 	}
 
-	departureTime, err := time.Parse(time.RFC3339, "2023-11-12T08:30:00Z")
+	departureTime, err := time.Parse(time.RFC3339, "2023-12-12T08:30:00Z")
 	if err != nil {
 		panic(err)
 	}
@@ -490,6 +490,12 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 		t = time.Now()
 		r.StopTimesForKthTrip(rounds, destKey, ttsKey, debug)
 
+		for _, sa := range rounds.Rounds[ttsKey] {
+			if sa.Arrival < uint64(DayInMs*2) {
+				panic("arrival too small")
+			}
+		}
+
 		if debug {
 			fmt.Println("Getting trip times took", time.Since(t))
 			t = time.Now()
@@ -511,6 +517,12 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 		}
 
 		r.StopTimesForKthTransfer(rounds, ttsKey+1)
+
+		for _, sa := range rounds.Rounds[ttsKey+1] {
+			if sa.Arrival < uint64(DayInMs*2) {
+				panic("arrival too small")
+			}
+		}
 
 		if debug {
 			fmt.Println("Getting transfer times took", time.Since(t))
@@ -570,8 +582,8 @@ func main() {
 
 	fmt.Println("Raptor data loaded")
 
-	originID := "524224"
-	destID := "416057"
+	originID := "de:09162:6"
+	destID := "de:09162:2"
 
 	fmt.Println("Routing from", originID, "to", destID)
 
@@ -588,5 +600,4 @@ func main() {
 	runRaptor(r, rounds, originKey, destKey, true)
 
 	fmt.Println("Routing took", time.Since(t))
-
 }
