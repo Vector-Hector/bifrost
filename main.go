@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	util "github.com/Vector-Hector/goutil"
+	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/zstd"
 	"os"
 	"strconv"
@@ -577,22 +578,37 @@ func main() {
 
 	fmt.Println("Raptor data loaded")
 
-	originID := "de:09162:6"
-	destID := "de:09162:2"
+	numHandlerThreads := 12
 
-	fmt.Println("Routing from", originID, "to", destID)
+	roundChan := make(chan *Rounds, numHandlerThreads)
 
-	rounds := NewRounds()
+	for i := 0; i < numHandlerThreads; i++ {
+		roundChan <- NewRounds()
+	}
 
-	originKey := r.StopsIndex[originID]
-	destKey := r.StopsIndex[destID]
+	engine := gin.Default()
 
-	fmt.Println("origin key", originKey)
-	fmt.Println("dest key", destKey)
+	engine.GET("/", func(c *gin.Context) {
+		rounds := <-roundChan
 
-	t := time.Now()
+		originID := "de:09162:6"
+		destID := "de:09162:2"
 
-	runRaptor(r, rounds, originKey, destKey, true)
+		originKey := r.StopsIndex[originID]
+		destKey := r.StopsIndex[destID]
 
-	fmt.Println("Routing took", time.Since(t))
+		t := time.Now()
+		runRaptor(r, rounds, originKey, destKey, true)
+		fmt.Println("Routing took", time.Since(t))
+
+		roundChan <- rounds
+
+		c.String(200, "Hello world")
+	})
+
+	err := engine.Run(":8090")
+	if err != nil {
+		panic(err)
+	}
+
 }
