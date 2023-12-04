@@ -52,9 +52,8 @@ func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
 
 	for stop, t := range round {
 		next[stop] = StopArrival{
-			Arrival:       t.Arrival,
-			Trip:          TripIdNoChange,
-			ExistsSession: rounds.CurrentSessionId,
+			Arrival: t.Arrival,
+			Trip:    TripIdNoChange,
 		}
 	}
 
@@ -104,11 +103,10 @@ func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
 			}
 
 			next[arc.Target] = StopArrival{
-				Arrival:       arrival,
-				Trip:          TripIdTransfer,
-				EnterKey:      node.Vertex,
-				Departure:     node.Arrival,
-				ExistsSession: rounds.CurrentSessionId,
+				Arrival:   arrival,
+				Trip:      TripIdTransfer,
+				EnterKey:  node.Vertex,
+				Departure: node.Arrival,
 			}
 			rounds.MarkedStops[arc.Target] = true
 			rounds.EarliestArrivals[arc.Target] = arrival

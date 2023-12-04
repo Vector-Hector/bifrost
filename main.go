@@ -38,8 +38,6 @@ type StopArrival struct {
 
 	EnterKey  uint64 // stop sequence key in route for trips, vertex key for transfers
 	Departure uint64 // departure day for trips, departure time in unix ms for transfers
-
-	ExistsSession uint64 // session id of the last session this stop arrival existed in
 }
 
 func timeToSeconds(day time.Time) uint64 {
@@ -87,9 +85,8 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 
 	for stop, stopArr := range round {
 		next[stop] = StopArrival{
-			Arrival:       stopArr.Arrival,
-			Trip:          TripIdNoChange,
-			ExistsSession: rounds.CurrentSessionId,
+			Arrival: stopArr.Arrival,
+			Trip:    TripIdNoChange,
 		}
 	}
 
@@ -155,11 +152,10 @@ func (r *RaptorData) StopTimesForKthTrip(rounds *Rounds, target uint64, current 
 
 				if (!ok || arr < ea) && (!targetOk || arr < targetEa) {
 					next[stopKey] = StopArrival{
-						Arrival:       arr,
-						Trip:          tripKey,
-						EnterKey:      uint64(stopSeqKey),
-						Departure:     uint64(departureDay),
-						ExistsSession: rounds.CurrentSessionId,
+						Arrival:   arr,
+						Trip:      tripKey,
+						EnterKey:  uint64(stopSeqKey),
+						Departure: uint64(departureDay),
 					}
 					rounds.MarkedStops[stopKey] = true
 					rounds.EarliestArrivals[stopKey] = arr
@@ -463,7 +459,7 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 
 	calcStart := time.Now()
 
-	rounds.Rounds[0][originKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin, ExistsSession: rounds.CurrentSessionId}
+	rounds.Rounds[0][originKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin}
 
 	rounds.MarkedStops[originKey] = true
 
@@ -504,7 +500,7 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 		}
 
 		if debug {
-			debugExistentStops(rounds.Rounds[ttsKey], rounds.CurrentSessionId)
+			debugExistentStops(rounds.Rounds[ttsKey])
 		}
 
 		//copy(rounds.MarkedStopsForTransfer, rounds.MarkedStops)
@@ -529,7 +525,7 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 		}
 
 		if debug {
-			debugExistentStops(rounds.Rounds[ttsKey+1], rounds.CurrentSessionId)
+			debugExistentStops(rounds.Rounds[ttsKey+1])
 		}
 
 		if CountMarkedStops(rounds.MarkedStops) == 0 {
@@ -560,16 +556,54 @@ func runRaptor(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, 
 	}
 }
 
-func debugExistentStops(round map[uint64]StopArrival, sessionId uint64) {
-	numExisting := 0
-	for _, stop := range round {
-		if stop.ExistsSession == sessionId {
-			numExisting++
-		}
+func runDijkstraOnly(r *RaptorData, rounds *Rounds, originKey uint64, destKey uint64, debug bool) {
+	t := time.Now()
+
+	rounds.NewSession()
+
+	if debug {
+		fmt.Println("resetting rounds took", time.Since(t))
+		t = time.Now()
 	}
-	fmt.Println("num existing stops", numExisting)
+
+	departureTime, err := time.Parse(time.RFC3339, "2023-12-12T08:30:00Z")
+	if err != nil {
+		panic(err)
+	}
+	departure := timeToSeconds(departureTime) // depart at 8:30
+
+	if debug {
+		r.PrintStats()
+
+		fmt.Println("finding routes from", originKey, "to", destKey)
+	}
+
+	rounds.Rounds[0][originKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin}
+	rounds.MarkedStopsForTransfer[originKey] = true
+
+	r.StopTimesForKthTransfer(rounds, 0)
+
+	if debug {
+		fmt.Println("Getting transfer times took", time.Since(t))
+	}
+
+	if debug {
+		arrival := rounds.EarliestArrivals[destKey]
+		if arrival == ArrivalTimeNotReached {
+			panic("destination unreachable")
+		}
+
+		fmt.Println("Destination reached after", time.UnixMilli(int64(arrival)).Sub(time.UnixMilli(int64(departure))), ". dep", getTimeString(departure), "/", departure, ", arr", getTimeString(arrival), "/", arrival)
+
+		journey := r.ReconstructJourney(destKey, 1, rounds)
+
+		fmt.Println("Journey:")
+		util.PrintJSON(journey)
+	}
+}
+
+func debugExistentStops(round map[uint64]StopArrival) {
 	fmt.Println("num stops", len(round))
-	fmt.Println("ratio", float64(numExisting)/float64(len(round)))
 }
 
 func main() {

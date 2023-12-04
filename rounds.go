@@ -6,7 +6,6 @@ type Rounds struct {
 	MarkedStopsForTransfer map[uint64]bool
 	EarliestArrivals       map[uint64]uint64
 	Queue                  map[uint32]uint32
-	CurrentSessionId       uint64
 }
 
 func NewRounds() *Rounds {
