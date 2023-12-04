@@ -127,7 +127,6 @@ type RaptorData struct {
 	RaptorToGtfsRoutes []uint32
 	RouteInformation   []*RouteInformation
 	TripInformation    []*TripInformation
-	Shortcuts          [][]Shortcut
 	TripToRoute        []uint32
 }
 

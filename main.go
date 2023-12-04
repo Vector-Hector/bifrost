@@ -582,7 +582,7 @@ func main() {
 
 	fmt.Println("Routing from", originID, "to", destID)
 
-	rounds := NewRounds(len(r.Vertices))
+	rounds := NewRounds()
 
 	originKey := r.StopsIndex[originID]
 	destKey := r.StopsIndex[destID]

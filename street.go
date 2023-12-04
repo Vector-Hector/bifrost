@@ -15,7 +15,6 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 
 	edgeFilePath := filePath + ".csv"
 	vertFilePath := filePath + "_vertices.csv"
-	shortcutsFilePath := filePath + "_shortcuts.csv"
 
 	t := time.Now()
 
@@ -88,35 +87,6 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 		r.StreetGraph[from] = append(r.StreetGraph[from], Arc{
 			Target:   to,
 			Distance: dist,
-		})
-		lock.Unlock()
-	})
-	if err != nil {
-		return err
-	}
-
-	r.Shortcuts = make([][]Shortcut, vertexCount)
-
-	err = stream.IterateShortcuts(shortcutsFilePath, threadCount, func(shortcut stream.StringArr) {
-		from := r.NodesIndex[shortcut.GetInt(stream.ShortcutFromVertexID)]
-		to := r.NodesIndex[shortcut.GetInt(stream.ShortcutToVertexID)]
-		via := r.NodesIndex[shortcut.GetInt(stream.ShortcutViaVertexID)]
-
-		dist := DistanceMs(&r.Vertices[from], &r.Vertices[to])
-
-		if dist > MaxWalkingMs {
-			return
-		}
-
-		lock := &locks[from]
-		lock.Lock()
-		r.StreetGraph[from] = append(r.StreetGraph[from], Arc{
-			Target:   to,
-			Distance: dist,
-		})
-		r.Shortcuts[from] = append(r.Shortcuts[from], Shortcut{
-			Target: to,
-			Via:    via,
 		})
 		lock.Unlock()
 	})

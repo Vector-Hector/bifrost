@@ -68,14 +68,6 @@ func GetTripFromTransfer(r *RaptorData, round map[uint64]StopArrival, destinatio
 			panic("transfer arrival is before enter")
 		}
 
-		// if arc is a shortcut, add the via vertex
-		for _, shortcut := range r.Shortcuts[prevPos] {
-			if shortcut.Target == position {
-				path = append(path, shortcut.Via)
-				break
-			}
-		}
-
 		position = prevPos
 		arrival = prevArr
 		path = append(path, position)

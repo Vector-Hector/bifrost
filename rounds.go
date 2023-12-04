@@ -9,7 +9,7 @@ type Rounds struct {
 	CurrentSessionId       uint64
 }
 
-func NewRounds(stopCount int) *Rounds {
+func NewRounds() *Rounds {
 	rounds := make([]map[uint64]StopArrival, (TransferLimit+1)*2+1)
 
 	for i := range rounds {
