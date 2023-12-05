@@ -1,15 +1,30 @@
 # Bifrost
 
-A lightweight, blazing fast, multi-modal routing engine in go. It can route on public transport and streets. Its features are still
+A lightweight, blazing fast, multi-modal routing engine in go. It can route on public transport and streets. Its
+features are still
 limited compared to other routing engines, but it is already quite fast and easy to use.
 
 ## Usage
 
 You can use it either as a library or as a command line tool. The cli will start a server that you can query with
 http requests.
-You will need to prepare a GTFS dataset and prepare street csv files using [osm2ch](https://github.com/LdDl/osm2ch).
-We use the [golang binding](https://github.com/Vector-Hector/fptf) of the [friendly public transport format](https://github.com/public-transport/friendly-public-transport-format/blob/1.2.1/spec/readme.md)
+You will need to prepare a GTFS and an OSM file. We use the [golang binding](https://github.com/Vector-Hector/fptf) of
+the [friendly public transport format](https://github.com/public-transport/friendly-public-transport-format/blob/1.2.1/spec/readme.md)
 for journey input and output.
+
+Note, that internally, one of the libraries uses CGO for faster parsing. This can be turned off by setting the
+environment variable `CGO_ENABLED=0` before building.
+
+### CLI Usage
+
+Please prepare at least one GTFS and one OSM file. After that, run:
+
+```bash
+go run server/main.go -gtfs data/mvv/gtfs/ -osm data/mvv/osm/oberbayern-latest.osm.pbf -bifrost data/mvv/munich.bifrost
+```
+
+This will start a server on port 8090. You can query it with http requests. See [here](server/api.json) for the api
+specification.
 
 ### Library Usage
 
@@ -32,7 +47,7 @@ import (
 func main() {
 	b := bifrost.DefaultBifrost // Create a new router with default parameters
 	err := b.LoadData(&bifrost.LoadOptions{
-		StreetPaths: []string{"oberbayern.csv"},
+		OsmPaths:    []string{"oberbayern-latest.osm.pbf"},
 		GtfsPaths:   []string{"gtfs/"},
 		BifrostPath: "munich.bifrost",
 	}) // Load cached data or create and cache routing data from source
@@ -90,5 +105,5 @@ Thanks to all the people who wrote the following articles, algorithms and librar
 - [Dijkstra](https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm): For street routing
 - [GTFS](https://developers.google.com/transit/gtfs/reference): For public transport data
 - [OSM](https://www.openstreetmap.org/): For street data
-- [osm2ch](https://github.com/LdDl/osm2ch): For converting OSM to csv files
+- [osm2ch](https://github.com/LdDl/osm2ch): For converting OSM to a street graph
 - [kdtree](https://github.com/kyroy/kdtree): For efficient nearest neighbor search

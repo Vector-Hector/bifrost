@@ -131,6 +131,11 @@ func (r *RoutingData) GetTime(ms uint64) fptf.TimeNullable {
 }
 
 func GetTripFromTrip(r *RoutingData, round map[uint64]StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
+	// todo add support for these trip leg fields:
+	// todo - trip.Schedule
+	// todo - trip.Mode (split between bus, train and watercraft)
+	// todo - trip.Operator
+
 	trip := r.Trips[arrival.Trip]
 	routeKey := r.TripToRoute[arrival.Trip]
 	route := r.Routes[routeKey]

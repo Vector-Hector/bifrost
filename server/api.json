@@ -1,0 +1,330 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Bifrost API",
+    "description": "A lightweight, blazing fast, multi-modal routing engine in go.",
+    "version": "1.0.0"
+  },
+  "host": "localhost:8090",
+  "schemes": [
+    "http"
+  ],
+  "paths": {
+    "/bifrost": {
+      "post": {
+        "summary": "Routing",
+        "description": "Route between two points.",
+        "produces": [
+          "application/json"
+        ],
+        "consumes": [
+          "application/json"
+        ],
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "description": "Request body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/request"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/fptf_journey"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "request": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "$ref": "#/definitions/fptf_location",
+          "required": [
+            "type",
+            "longitude",
+            "latitude"
+          ]
+        },
+        "destination": {
+          "$ref": "#/definitions/fptf_location",
+          "required": [
+            "type",
+            "longitude",
+            "latitude"
+          ]
+        },
+        "departure": {
+          "type": "string",
+          "format": "RFC3339",
+          "example": "2023-12-12T08:30:00Z"
+        }
+      }
+    },
+    "fptf_location": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "location"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "example": "123456"
+        },
+        "name": {
+          "type": "string",
+          "example": "Berlin Hbf"
+        },
+        "latitude": {
+          "type": "number",
+          "example": 52.525083
+        },
+        "longitude": {
+          "type": "number",
+          "example": 13.369408
+        }
+      }
+    },
+    "fptf_journey": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "journey"
+          ]
+        },
+        "legs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/fptf_leg"
+          }
+        }
+      }
+    },
+    "fptf_leg": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "$ref": "#/definitions/fptf_stop_station"
+        },
+        "destination": {
+          "$ref": "#/definitions/fptf_stop_station"
+        },
+        "departure": {
+          "type": "string",
+          "format": "RFC3339",
+          "example": "2023-12-12T08:30:00Z"
+        },
+        "arrival": {
+          "type": "string",
+          "format": "RFC3339",
+          "example": "2023-12-12T08:30:00Z"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "train",
+            "bus",
+            "watercraft",
+            "taxi",
+            "gondola",
+            "aircraft",
+            "car",
+            "bicycle",
+            "walking"
+          ]
+        },
+        "public": {
+          "type": "boolean",
+          "example": true
+        },
+        "line": {
+          "type": "string",
+          "example": "ICE 123"
+        },
+        "direction": {
+          "type": "string",
+          "example": "Berlin Hbf"
+        },
+        "departurePlatform": {
+          "type": "string",
+          "example": "12"
+        },
+        "arrivalPlatform": {
+          "type": "string",
+          "example": "12"
+        },
+        "departureDelay": {
+          "type": "integer",
+          "example": 120
+        },
+        "arrivalDelay": {
+          "type": "integer",
+          "example": 120
+        },
+        "schedule": {
+          "$ref": "#/definitions/fptf_schedule"
+        },
+        "operator": {
+          "$ref": "#/definitions/fptf_operator"
+        },
+        "stopovers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/fptf_stopover"
+          }
+        }
+      }
+    },
+    "fptf_schedule": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "schedule"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "example": "123456"
+        },
+        "route": {
+          "type": "string",
+          "example": "ICE 123"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "train",
+            "bus",
+            "watercraft",
+            "taxi",
+            "gondola",
+            "aircraft",
+            "car",
+            "bicycle",
+            "walking"
+          ]
+        },
+        "sequence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "arrival": {
+                "type": "integer",
+                "example": 0
+              },
+              "departure": {
+                "type": "integer",
+                "example": 0
+              }
+            }
+          }
+        },
+        "starts": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "example": 1488379661
+          }
+        }
+      }
+    },
+    "fptf_operator": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "operator"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "example": "123456"
+        },
+        "name": {
+          "type": "string",
+          "example": "Deutsche Bahn"
+        }
+      }
+    },
+    "fptf_stopover": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "stopover"
+          ]
+        },
+        "stop": {
+          "$ref": "#/definitions/fptf_stop_station"
+        },
+        "departure": {
+          "type": "string",
+          "format": "RFC3339",
+          "example": "2023-12-12T08:30:00Z"
+        },
+        "arrival": {
+          "type": "string",
+          "format": "RFC3339",
+          "example": "2023-12-12T08:30:00Z"
+        },
+        "departureDelay": {
+          "type": "integer",
+          "example": 120
+        },
+        "arrivalDelay": {
+          "type": "integer",
+          "example": 120
+        },
+        "departurePlatform": {
+          "type": "string",
+          "example": "12"
+        },
+        "arrivalPlatform": {
+          "type": "string",
+          "example": "12"
+        }
+      }
+    },
+    "fptf_stop_station": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "station",
+            "stop"
+          ]
+        },
+        "id": {
+          "type": "string",
+          "example": "123456"
+        },
+        "name": {
+          "type": "string",
+          "example": "Berlin Hbf"
+        },
+        "location": {
+          "$ref": "#/definitions/fptf_location"
+        }
+      }
+    }
+  }
+}
