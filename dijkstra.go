@@ -1,6 +1,11 @@
-package main
+package bifrost
 
-import "container/heap"
+import (
+	"container/heap"
+	"fmt"
+	util "github.com/Vector-Hector/goutil"
+	"time"
+)
 
 type dijkstraNode struct {
 	Arrival  uint64
@@ -46,7 +51,63 @@ func (pq *priorityQueue) update(node *dijkstraNode, arrival uint64, targetWalkTi
 	heap.Fix(pq, node.Index)
 }
 
-func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
+func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []Source, destKey uint64, debug bool) {
+	t := time.Now()
+
+	rounds.NewSession()
+
+	if debug {
+		fmt.Println("resetting rounds took", time.Since(t))
+		t = time.Now()
+	}
+
+	if debug {
+		fmt.Println("finding routes to", destKey)
+
+		fmt.Println("origins:")
+		for _, origin := range origins {
+			fmt.Println("stop", origin.StopKey, "at", origin.Departure)
+		}
+
+		fmt.Println("Data stats:")
+		b.Data.PrintStats()
+	}
+
+	for _, origin := range origins {
+		departure := timeToMs(origin.Departure)
+		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin}
+		rounds.MarkedStops[origin.StopKey] = true
+		rounds.EarliestArrivals[origin.StopKey] = departure
+	}
+
+	b.runTransferRound(rounds, 0)
+
+	if debug {
+		fmt.Println("Getting transfer times took", time.Since(t))
+	}
+
+	if debug {
+		arrival := rounds.EarliestArrivals[destKey]
+		if arrival == ArrivalTimeNotReached {
+			panic("destination unreachable")
+		}
+
+		journey := b.ReconstructJourney(destKey, 1, rounds)
+
+		dep := journey.GetDeparture()
+		arr := journey.GetArrival()
+
+		origin := journey.GetOrigin().GetName()
+		destination := journey.GetDestination().GetName()
+
+		fmt.Println("Journey from", origin, "to", destination, "took", arr.Sub(dep), ". dep", dep, ", arr", arr)
+
+		fmt.Println("Journey:")
+		util.PrintJSON(journey)
+	}
+}
+
+func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
 	round := rounds.Rounds[current]
 	next := rounds.Rounds[current+1]
 
@@ -86,11 +147,11 @@ func (r *RaptorData) StopTimesForKthTransfer(rounds *Rounds, current int) {
 		node := heap.Pop(&queue).(*dijkstraNode)
 		delete(nodeMap, node.Vertex)
 
-		arcs := r.StreetGraph[node.Vertex]
+		arcs := b.Data.StreetGraph[node.Vertex]
 		for _, arc := range arcs {
 			targetWalkTime := node.WalkTime + arc.Distance
 
-			if targetWalkTime > MaxWalkingMs {
+			if targetWalkTime > b.MaxWalkingMs {
 				continue
 			}
 

@@ -1,4 +1,4 @@
-package main
+package bifrost
 
 type Rounds struct {
 	Rounds                 []map[uint64]StopArrival
@@ -8,8 +8,8 @@ type Rounds struct {
 	Queue                  map[uint32]uint32
 }
 
-func NewRounds() *Rounds {
-	rounds := make([]map[uint64]StopArrival, (TransferLimit+1)*2+1)
+func (b *Bifrost) NewRounds() *Rounds {
+	rounds := make([]map[uint64]StopArrival, (b.TransferLimit+1)*2+1)
 
 	for i := range rounds {
 		rounds[i] = make(map[uint64]StopArrival)
@@ -50,12 +50,22 @@ func (r *Rounds) NewSession() {
 func (r *Rounds) ResetRounds() {
 	done := make(chan bool)
 
+	maxThreads := 12
+
+	free := make(chan bool, maxThreads)
+
+	for i := 0; i < maxThreads; i++ {
+		free <- true
+	}
+
 	for i := range r.Rounds {
 		go func(i int) {
+			<-free
 			for k := range r.Rounds[i] {
 				delete(r.Rounds[i], k)
 			}
 			done <- true
+			free <- true
 		}(i)
 	}
 

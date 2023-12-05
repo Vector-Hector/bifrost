@@ -1,25 +1,32 @@
-package main
+package bifrost
 
 import (
 	"fmt"
-	"github.com/kyroy/kdtree"
-	"raptor/stream"
+	"github.com/Vector-Hector/bifrost/stream"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-func ReadStreetData(r *RaptorData, filePath string) error {
-	// add street graph to raptor dataset
+// AddStreet reads the street data from StreetPath and adds it to the BifrostData or creates a new one containing
+// only the street data. Obtain the csv street files from osm2ch.
+func (b *Bifrost) AddStreet(filePath string) error {
+	filePath = strings.TrimSuffix(filePath, ".csv")
 
 	edgeFilePath := filePath + ".csv"
 	vertFilePath := filePath + "_vertices.csv"
 
 	t := time.Now()
 
+	r := b.Data
+	if r == nil {
+		r = &BifrostData{
+			Vertices: make([]Vertex, 0),
+		}
+	}
+
 	vertexIndex := uint64(len(r.Vertices))
-	newVerticesStart := vertexIndex
 
 	vertexLock := sync.Mutex{}
 
@@ -76,9 +83,9 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 		from := r.NodesIndex[edge.GetInt(stream.EdgeFromVertexID)]
 		to := r.NodesIndex[edge.GetInt(stream.EdgeToVertexID)]
 
-		dist := DistanceMs(&r.Vertices[from], &r.Vertices[to])
+		dist := b.DistanceMs(&r.Vertices[from], &r.Vertices[to])
 
-		if dist > MaxWalkingMs {
+		if dist > b.MaxWalkingMs {
 			return
 		}
 
@@ -95,71 +102,6 @@ func ReadStreetData(r *RaptorData, filePath string) error {
 	}
 
 	fmt.Println("Reading files took", time.Since(t))
-
-	// connect stops to street graph using knn
-
-	verticesAsPoints := make([]kdtree.Point, len(r.Vertices))
-	for i, v := range r.Vertices {
-		verticesAsPoints[i] = &GeoPoint{
-			Latitude:  v.Latitude,
-			Longitude: v.Longitude,
-			VertKey:   uint64(i),
-		}
-	}
-
-	tree := kdtree.New(verticesAsPoints)
-
-	fmt.Println("Building kd-tree took", time.Since(t))
-
-	t = time.Now()
-
-	fmt.Println("Connecting stops to street graph")
-
-	for i := 0; i < int(newVerticesStart); i++ {
-		stop := r.Vertices[i]
-		stopPoint := &GeoPoint{
-			Latitude:  stop.Latitude,
-			Longitude: stop.Longitude,
-			VertKey:   uint64(i),
-		}
-
-		nearest := tree.KNN(stopPoint, 30)
-
-		for _, point := range nearest {
-			streetVert := point.(*GeoPoint)
-
-			if !fastDistWithin(stopPoint, streetVert, MaxStopsConnectionSeconds) {
-				break
-			}
-
-			dist := DistanceMs(&r.Vertices[i], &r.Vertices[streetVert.VertKey])
-
-			if dist > MaxStopsConnectionSeconds {
-				break
-			}
-
-			fromKey := stopPoint.VertKey
-			toKey := streetVert.VertKey
-
-			fromLock := &locks[fromKey]
-			fromLock.Lock()
-			r.StreetGraph[fromKey] = append(r.StreetGraph[fromKey], Arc{
-				Target:   toKey,
-				Distance: dist,
-			})
-			fromLock.Unlock()
-
-			toLock := &locks[toKey]
-			toLock.Lock()
-			r.StreetGraph[toKey] = append(r.StreetGraph[toKey], Arc{
-				Target:   fromKey,
-				Distance: dist,
-			})
-			toLock.Unlock()
-		}
-	}
-
-	fmt.Println("Connecting stops to street graph took", time.Since(t))
 
 	return nil
 }

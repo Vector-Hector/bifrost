@@ -1,9 +1,8 @@
-module raptor
+module github.com/Vector-Hector/bifrost
 
-go 1.19
+go 1.21
 
 require (
-	github.com/Vector-Hector/friendly-public-transport-format v0.0.7
 	github.com/Vector-Hector/goutil v0.0.4
 	github.com/artonge/go-gtfs v1.3.4
 	github.com/blevesearch/bleve v1.0.14
@@ -14,6 +13,7 @@ require (
 
 require (
 	github.com/RoaringBitmap/roaring v0.4.23 // indirect
+	github.com/Vector-Hector/fptf v0.0.8 // indirect
 	github.com/artonge/go-csv-tag/v2 v2.2.0 // indirect
 	github.com/blevesearch/go-porterstemmer v1.0.3 // indirect
 	github.com/blevesearch/mmap-go v1.0.2 // indirect
@@ -28,6 +28,7 @@ require (
 	github.com/chenzhuoyu/base64x v0.0.0-20230717121745-296ad89f973d // indirect
 	github.com/chenzhuoyu/iasm v0.9.1 // indirect
 	github.com/couchbase/vellum v1.0.2 // indirect
+	github.com/datadog/czlib v0.0.0-20160811164712-4bc9a24e37f2 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.3 // indirect
 	github.com/gin-contrib/sse v0.1.0 // indirect
 	github.com/glycerine/go-unsnap-stream v0.0.0-20181221182339-f9677308dec2 // indirect
@@ -47,6 +48,9 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/mschoch/smat v0.2.0 // indirect
+	github.com/paulmach/orb v0.1.3 // indirect
+	github.com/paulmach/osm v0.7.1 // indirect
+	github.com/paulmach/protoscan v0.2.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.1.0 // indirect
 	github.com/philhofer/fwd v1.0.0 // indirect
 	github.com/steveyen/gtreap v0.1.0 // indirect

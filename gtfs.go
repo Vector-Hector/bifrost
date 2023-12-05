@@ -1,144 +1,43 @@
-package main
+package bifrost
 
 import (
 	"fmt"
+	"github.com/Vector-Hector/bifrost/stream"
+	"github.com/artonge/go-gtfs"
+	"github.com/kyroy/kdtree"
 	"math"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 )
 
-type StopContext struct {
-	Id   string
-	Name string
+type gtfsStopTime struct {
+	Departure uint32
+	Arrival   uint32
+	StopSeq   uint32
+	StopKey   uint64
 }
 
-type Vertex struct {
-	Longitude float64
-	Latitude  float64
-	Stop      *StopContext
-}
-
-func (v Vertex) Dimensions() int {
-	return 2
-}
-
-func (v Vertex) Dimension(i int) float64 {
-	switch i {
-	case 0:
-		return v.Latitude
-	case 1:
-		return v.Longitude
-	default:
-		panic("invalid dimension")
+func timeStringToMs(timeStr string) uint32 {
+	parts := strings.Split(timeStr, ":")
+	hours, err := strconv.Atoi(parts[0])
+	if err != nil {
+		panic(err)
 	}
-}
 
-type GeoPoint struct {
-	Latitude  float64
-	Longitude float64
-	VertKey   uint64
-}
-
-func (s *GeoPoint) Dimensions() int {
-	return 2
-}
-
-func (s *GeoPoint) Dimension(i int) float64 {
-	switch i {
-	case 0:
-		return s.Latitude
-	case 1:
-		return s.Longitude
-	default:
-		panic("invalid dimension")
+	minutes, err := strconv.Atoi(parts[1])
+	if err != nil {
+		panic(err)
 	}
-}
 
-type Stopover struct {
-	Arrival   uint32 // ms time since start of day
-	Departure uint32 // ms time since start of day
-}
+	seconds, err := strconv.Atoi(parts[2])
+	if err != nil {
+		panic(err)
+	}
 
-func (s Stopover) ArrivalAtDay(day uint64) uint64 {
-	return uint64(s.Arrival) + day*uint64(DayInMs)
-}
-
-func (s Stopover) DepartureAtDay(day uint64) uint64 {
-	return uint64(s.Departure) + day*uint64(DayInMs)
-}
-
-type Route struct {
-	Stops []uint64
-	Trips []uint32
-}
-
-type StopRoutePair struct {
-	Route         uint32
-	StopKeyInTrip uint32
-}
-
-type Trip struct {
-	Service   uint32
-	StopTimes []Stopover
-}
-
-type Arc struct {
-	Target   uint64
-	Distance uint32 // in ms
-}
-
-type Service struct {
-	Weekdays uint8  // bitfield, 1 << 0 = monday, 1 << 6 = sunday
-	StartDay uint32 // day relative to PivotDate
-	EndDay   uint32 // day relative to PivotDate
-
-	AddedExceptions   []uint32 // days relative to PivotDate
-	RemovedExceptions []uint32 // days relative to PivotDate
-}
-
-type RouteInformation struct {
-	ShortName string
-}
-
-type TripInformation struct {
-	Headsign string
-}
-
-type Shortcut struct {
-	Target uint64
-	Via    uint64
-}
-
-type RaptorData struct {
-	MaxTripDayLength uint32 // number of days to go backwards in time (for trips that end after midnight or multiple days later than the start)
-
-	Services []*Service
-
-	Routes       []*Route
-	StopToRoutes [][]StopRoutePair
-	Trips        []*Trip
-	StreetGraph  [][]Arc
-
-	Reorders map[uint64][]uint32
-
-	// for reconstructing journeys after routing
-	Vertices           []Vertex
-	StopsIndex         map[string]uint64 // gtfs stop id -> vertex index
-	NodesIndex         map[int64]uint64  // csv vertex id -> vertex index
-	RaptorToGtfsRoutes []uint32
-	RouteInformation   []*RouteInformation
-	TripInformation    []*TripInformation
-	TripToRoute        []uint32
-}
-
-func (r *RaptorData) PrintStats() {
-	fmt.Println("stops", len(r.Vertices))
-	fmt.Println("routes", len(r.Routes))
-	fmt.Println("trips", len(r.Trips))
-	fmt.Println("transfer graph", len(r.StreetGraph))
-	fmt.Println("stop to routes", len(r.StopToRoutes))
-	fmt.Println("reorders", len(r.Reorders))
-	fmt.Println("services", len(r.Services))
-	fmt.Println("max trip day length", r.MaxTripDayLength)
+	totalSeconds := seconds + minutes*60 + hours*60*60
+	return uint32(totalSeconds) * 1000
 }
 
 func getUnixDay(date string) uint32 {
@@ -150,9 +49,9 @@ func getUnixDay(date string) uint32 {
 	return uint32(uint64(t.UnixMilli()) / uint64(DayInMs))
 }
 
-func DistanceMs(from *Vertex, to *Vertex) uint32 {
+func (b *Bifrost) DistanceMs(from *Vertex, to *Vertex) uint32 {
 	distInKm := Distance(from.Latitude, from.Longitude, to.Latitude, to.Longitude, "K")
-	distInMs := (distInKm * 1000) / WalkingSpeed
+	distInMs := (distInKm * 1000) / b.WalkingSpeed
 	res := uint32(math.Ceil(distInMs))
 	if res == 0 {
 		return 1
@@ -160,7 +59,7 @@ func DistanceMs(from *Vertex, to *Vertex) uint32 {
 	return res
 }
 
-// https://www.geodatasource.com/developers/go
+// Distance https://www.geodatasource.com/developers/go
 func Distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64, unit ...string) float64 {
 	const PI float64 = 3.141592653589793
 
@@ -189,4 +88,406 @@ func Distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64, unit ...st
 	}
 
 	return dist
+}
+
+func (b *Bifrost) AddGtfs(directory string) error {
+	// todo merge directly instead of using a temporary struct. see AddStreetData on how it's supposed to work
+
+	directory = strings.TrimSuffix(directory, "/")
+
+	stopCount, err := stream.CountRows(directory + "/stops.txt")
+	if err != nil {
+		return err
+	}
+
+	prog := &Progress{}
+
+	stops := make([]Vertex, stopCount)
+	stopsAsPoints := make([]kdtree.Point, stopCount)
+	stopToRoutes := make([][]StopRoutePair, stopCount)
+	stopsIndex := make(map[string]uint64, stopCount)
+
+	prog.Reset(uint64(stopCount))
+	err = stream.IterateStops(directory+"/stops.txt", func(index int, stop *gtfs.Stop) bool {
+		prog.Increment()
+		prog.Print()
+
+		stops[index] = Vertex{
+			Stop: &StopContext{
+				Id:   stop.ID,
+				Name: stop.Name,
+			},
+			Longitude: stop.Longitude,
+			Latitude:  stop.Latitude,
+		}
+		stopsAsPoints[index] = &GeoPoint{
+			Latitude:  stop.Longitude,
+			Longitude: stop.Latitude,
+			VertKey:   uint64(index),
+		}
+
+		stopsIndex[stop.ID] = uint64(index)
+		stopToRoutes[index] = make([]StopRoutePair, 0)
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println()
+
+	fmt.Println("stops", stopCount)
+
+	fmt.Println("converting services")
+
+	serviceCount, err := stream.CountRows(directory + "/calendar.txt")
+	if err != nil {
+		return err
+	}
+
+	services := make([]*Service, serviceCount)
+	servicesIndex := make(map[string]uint32, serviceCount)
+
+	prog.Reset(uint64(serviceCount))
+	err = stream.IterateServices(directory+"/calendar.txt", func(index int, calendar *gtfs.Calendar) bool {
+		prog.Increment()
+		prog.Print()
+		services[index] = &Service{
+			Weekdays:          uint8(calendar.Monday) | uint8(calendar.Tuesday)<<1 | uint8(calendar.Wednesday)<<2 | uint8(calendar.Thursday)<<3 | uint8(calendar.Friday)<<4 | uint8(calendar.Saturday)<<5 | uint8(calendar.Sunday)<<6,
+			StartDay:          getUnixDay(calendar.Start),
+			EndDay:            getUnixDay(calendar.End),
+			AddedExceptions:   make([]uint32, 0),
+			RemovedExceptions: make([]uint32, 0),
+		}
+
+		servicesIndex[calendar.ServiceID] = uint32(index)
+
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println()
+
+	fmt.Println("iterating calendar dates")
+
+	err = stream.IterateCalendarDates(directory+"/calendar_dates.txt", func(index int, calendarDate *gtfs.CalendarDate) bool {
+		service := services[servicesIndex[calendarDate.ServiceID]]
+
+		switch calendarDate.ExceptionType {
+		case 1:
+			service.AddedExceptions = append(service.AddedExceptions, getUnixDay(calendarDate.Date))
+		case 2:
+			service.RemovedExceptions = append(service.RemovedExceptions, getUnixDay(calendarDate.Date))
+		}
+
+		return true
+	})
+	if err != nil {
+		return err
+	}
+
+	// sort service exceptions
+	for _, service := range services {
+		sort.Slice(service.AddedExceptions, func(i, j int) bool {
+			return service.AddedExceptions[i] < service.AddedExceptions[j]
+		})
+		sort.Slice(service.RemovedExceptions, func(i, j int) bool {
+			return service.RemovedExceptions[i] < service.RemovedExceptions[j]
+		})
+	}
+
+	fmt.Println("services", len(services))
+	fmt.Println("converting trips")
+
+	routeCount, err := stream.CountRows(directory + "/routes.txt")
+	if err != nil {
+		return err
+	}
+
+	routeIndex := make(map[string]uint32, routeCount)
+	routeInformation := make([]*RouteInformation, routeCount)
+
+	prog.Reset(uint64(routeCount))
+	err = stream.IterateRoutes(directory+"/routes.txt", func(index int, route *gtfs.Route) bool {
+		prog.Increment()
+		prog.Print()
+
+		routeIndex[route.ID] = uint32(index)
+		routeInformation[index] = &RouteInformation{
+			ShortName: route.ShortName,
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println()
+
+	tripCount, err := stream.CountRows(directory + "/trips.txt")
+	if err != nil {
+		return err
+	}
+
+	procTrips := make([][]uint32, tripCount)
+	tripToRouteKey := make([]uint32, tripCount)
+	tripToServiceKey := make([]uint32, tripCount)
+	procTripsIndex := make(map[string]uint32, tripCount)
+	tripInformation := make([]*TripInformation, tripCount)
+
+	prog.Reset(uint64(tripCount))
+	err = stream.IterateTrips(directory+"/trips.txt", func(index int, trip *gtfs.Trip) bool {
+		prog.Increment()
+		prog.Print()
+
+		procTrips[index] = make([]uint32, 0)
+		tripToRouteKey[index] = routeIndex[trip.RouteID]
+		tripToServiceKey[index] = servicesIndex[trip.ServiceID]
+		procTripsIndex[trip.ID] = uint32(index)
+		tripInformation[index] = &TripInformation{
+			Headsign: trip.Headsign,
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println()
+
+	fmt.Println("trips", tripCount)
+	fmt.Println("converting stop times")
+
+	stopTimeCount, err := stream.CountRows(directory + "/stop_times.txt")
+	if err != nil {
+		return err
+	}
+
+	stopTimes := make([]*gtfsStopTime, stopTimeCount)
+
+	prog.Reset(uint64(stopTimeCount))
+	err = stream.IterateStopTimes(directory+"/stop_times.txt", func(index int, stopTime *gtfs.StopTime) bool {
+		prog.Increment()
+		prog.Print()
+
+		tripKey := procTripsIndex[stopTime.TripID]
+		procTrips[tripKey] = append(procTrips[tripKey], uint32(index))
+		stopTimes[index] = &gtfsStopTime{
+			Departure: timeStringToMs(stopTime.Departure),
+			Arrival:   timeStringToMs(stopTime.Arrival),
+			StopSeq:   stopTime.StopSeq,
+			StopKey:   stopsIndex[stopTime.StopID],
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Println()
+
+	fmt.Println("expanding routes to distinct stop sequences")
+
+	tripRoutes := make([]map[string][]uint32, routeCount)
+
+	for tripKey, trip := range procTrips {
+		if len(trip) == 0 {
+			continue
+		}
+
+		sort.Slice(trip, func(i, j int) bool {
+			stI := stopTimes[trip[i]]
+			stJ := stopTimes[trip[j]]
+
+			return stI.StopSeq < stJ.StopSeq
+		})
+
+		stopIds := make([]string, len(trip))
+		for i, stopTimeKey := range trip {
+			stopIds[i] = strconv.Itoa(int(stopTimes[stopTimeKey].StopKey))
+		}
+
+		routeKey := tripToRouteKey[tripKey]
+
+		tripRoute := tripRoutes[routeKey]
+
+		if tripRoute == nil {
+			tripRoute = make(map[string][]uint32)
+		}
+
+		routeSeqId := strings.Join(stopIds, "/\\/")
+
+		routeTrips, ok := tripRoute[routeSeqId]
+		if !ok {
+			routeTrips = make([]uint32, 0)
+		}
+
+		routeTrips = append(routeTrips, uint32(tripKey))
+		tripRoute[routeSeqId] = routeTrips
+		tripRoutes[routeKey] = tripRoute
+	}
+
+	fmt.Println("creating stop route pairs")
+
+	stopRoutePairs := make([][]StopRoutePair, stopCount)
+	for i := range stopRoutePairs {
+		stopRoutePairs[i] = make([]StopRoutePair, 0)
+	}
+
+	maxTripDayLength := uint32(0)
+
+	fmt.Println("converting trips")
+
+	trips := make([]*Trip, tripCount)
+	for i, trip := range procTrips {
+		if len(trip) == 0 {
+			continue
+		}
+
+		st := make([]Stopover, len(trip))
+		for j, stopTimeKey := range trip {
+			stopTime := stopTimes[stopTimeKey]
+			arr := stopTime.Arrival
+			dep := stopTime.Departure
+
+			arrDays := arr / DayInMs
+			depDays := dep / DayInMs
+
+			if arrDays > maxTripDayLength {
+				maxTripDayLength = arrDays
+			}
+
+			if depDays > maxTripDayLength {
+				maxTripDayLength = depDays
+			}
+
+			st[j] = Stopover{
+				Arrival:   arr,
+				Departure: dep,
+			}
+		}
+
+		serviceKey := tripToServiceKey[i]
+
+		trips[i] = &Trip{
+			StopTimes: st,
+			Service:   serviceKey,
+		}
+	}
+
+	fmt.Println("trips", len(trips))
+	fmt.Println("creating routes")
+
+	routes := make([]*Route, 0)
+	raptorToGtfsRoutes := make([]uint32, 0)
+	reorders := make(map[uint64][]uint32)
+
+	for gtfsRouteKey, feedRouteCollection := range tripRoutes {
+		for _, route := range feedRouteCollection {
+			firstTrip := procTrips[route[0]]
+
+			routeKey := len(routes)
+
+			routeStops := make([]uint64, len(firstTrip))
+			for i, stopTimeKey := range firstTrip {
+				stop := stopTimes[stopTimeKey].StopKey
+				routeStops[i] = stop
+
+				pair := StopRoutePair{
+					Route:         uint32(routeKey),
+					StopKeyInTrip: uint32(i),
+				}
+
+				stopRoutePairs[stop] = append(stopRoutePairs[stop], pair)
+			}
+
+			sort.Slice(route, func(i, j int) bool {
+				tripI := trips[route[i]]
+				tripJ := trips[route[j]]
+
+				return tripI.StopTimes[0].Departure < tripJ.StopTimes[0].Departure
+			})
+
+			unsortedStops := make([]uint32, 0)
+
+			for stop := 0; stop < len(routeStops); stop++ {
+				last := trips[route[0]].StopTimes[stop].Departure
+
+				for _, tripKey := range route {
+					trip := trips[tripKey]
+					current := trip.StopTimes[stop].Departure
+					if current < last {
+						unsortedStops = append(unsortedStops, uint32(stop))
+						break
+					}
+					last = current
+				}
+			}
+
+			for _, stopSeqKey := range unsortedStops {
+				routeStopKey := uint64(routeKey)<<32 | uint64(stopSeqKey)
+
+				reorder := make([]uint32, len(route))
+				for i := range route {
+					reorder[i] = uint32(i)
+				}
+
+				sort.Slice(reorder, func(i, j int) bool {
+					tripI := trips[route[reorder[i]]]
+					tripJ := trips[route[reorder[j]]]
+
+					return tripI.StopTimes[stopSeqKey].Departure < tripJ.StopTimes[stopSeqKey].Departure
+				})
+
+				reorders[routeStopKey] = reorder
+			}
+
+			routes = append(routes, &Route{
+				Stops: routeStops,
+				Trips: route,
+			})
+			raptorToGtfsRoutes = append(raptorToGtfsRoutes, uint32(gtfsRouteKey))
+		}
+	}
+
+	fmt.Println("routes", len(routes))
+
+	tripToRoute := make([]uint32, tripCount)
+
+	for i, route := range routes {
+		for _, tripKey := range route.Trips {
+			tripToRoute[tripKey] = uint32(i)
+		}
+	}
+
+	b.MergeData(&BifrostData{
+		MaxTripDayLength: maxTripDayLength,
+		Vertices:         stops,
+		StopsIndex:       stopsIndex,
+		Routes:           routes,
+		StopToRoutes:     stopRoutePairs,
+		Trips:            trips,
+		Reorders:         reorders,
+		Services:         services,
+
+		GtfsRouteIndex:   raptorToGtfsRoutes,
+		RouteInformation: routeInformation,
+		TripInformation:  tripInformation,
+		TripToRoute:      tripToRoute,
+	})
+
+	return nil
+}
+
+func (b *Bifrost) fastDistWithin(from *GeoPoint, to *GeoPoint, maxMsDist uint32) bool {
+	latDiffInMs := (math.Abs(from.Latitude-to.Latitude) * 111 * 1000) / b.WalkingSpeed
+
+	if latDiffInMs > float64(maxMsDist) {
+		return false
+	}
+
+	lonDiffInSecs := (math.Abs(from.Longitude-to.Longitude) * 111 * math.Cos(from.Latitude) * 1000) / b.WalkingSpeed
+
+	if lonDiffInSecs > float64(maxMsDist) {
+		return false
+	}
+
+	return true
 }

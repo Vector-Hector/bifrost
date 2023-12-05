@@ -1,15 +1,24 @@
-package main
+package bifrost
 
 import (
 	"testing"
+	"time"
 )
 
-var R *RaptorData
-var RaptorRounds *Rounds
+var b *Bifrost
+var r *Rounds
 
 func init() {
-	R = LoadRaptorDataset()
-	RaptorRounds = NewRounds(len(R.Vertices))
+	b = DefaultBifrost
+	err := b.LoadData(&LoadOptions{
+		StreetPaths: []string{"../data/mvv/oberbayern.csv"},
+		GtfsPaths:   []string{"../data/mvv/gtfs/"},
+		BifrostPath: "../data/mvv/munich.bifrost",
+	})
+	if err != nil {
+		panic(err)
+	}
+	r = b.NewRounds()
 }
 
 func TestRaptor(t *testing.T) {
@@ -17,7 +26,15 @@ func TestRaptor(t *testing.T) {
 	destID := "170058"   // marienplatz
 	//destID := "193261" // berlin hbf
 
+	departureTime, err := time.Parse(time.RFC3339, "2023-12-12T08:30:00Z")
+	if err != nil {
+		panic(err)
+	}
+
 	for i := 0; i < 100; i++ {
-		runRaptor(R, RaptorRounds, R.StopsIndex[originID], R.StopsIndex[destID], false)
+		b.Route(r, []Source{{
+			StopKey:   b.Data.StopsIndex[originID],
+			Departure: departureTime,
+		}}, b.Data.StopsIndex[destID], false)
 	}
 }

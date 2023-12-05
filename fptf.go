@@ -1,14 +1,14 @@
-package main
+package bifrost
 
 import (
 	"fmt"
-	fptf "github.com/Vector-Hector/friendly-public-transport-format"
+	"github.com/Vector-Hector/fptf"
 	util "github.com/Vector-Hector/goutil"
 	"strconv"
 	"time"
 )
 
-func (r *RaptorData) ReconstructJourney(destKey uint64, lastRound int, rounds *Rounds) *fptf.Journey {
+func (b *Bifrost) ReconstructJourney(destKey uint64, lastRound int, rounds *Rounds) *fptf.Journey {
 	// reconstruct path
 	trips := make([]*fptf.Trip, 0)
 	position := destKey
@@ -27,14 +27,14 @@ func (r *RaptorData) ReconstructJourney(destKey uint64, lastRound int, rounds *R
 
 		if arr.Trip == TripIdTransfer {
 			fmt.Println("round", i, "is a transfer")
-			trip, newPos := GetTripFromTransfer(r, rounds.Rounds[i], position)
+			trip, newPos := GetTripFromTransfer(b.Data, rounds.Rounds[i], position)
 			position = newPos
 			trips = append(trips, trip)
 			continue
 		}
 
 		fmt.Println("round", i, "is a trip")
-		trip, newPos := GetTripFromTrip(r, rounds.Rounds[i-1], arr)
+		trip, newPos := GetTripFromTrip(b.Data, rounds.Rounds[i-1], arr)
 		position = newPos
 		trips = append(trips, trip)
 	}
@@ -50,7 +50,7 @@ func (r *RaptorData) ReconstructJourney(destKey uint64, lastRound int, rounds *R
 	}
 }
 
-func GetTripFromTransfer(r *RaptorData, round map[uint64]StopArrival, destination uint64) (*fptf.Trip, uint64) {
+func GetTripFromTransfer(r *BifrostData, round map[uint64]StopArrival, destination uint64) (*fptf.Trip, uint64) {
 	position := destination
 	arrival := round[position]
 	path := make([]uint64, 1)
@@ -106,7 +106,7 @@ func GetTripFromTransfer(r *RaptorData, round map[uint64]StopArrival, destinatio
 	return trip, position
 }
 
-func (r *RaptorData) GetFptfStop(stop uint64) *fptf.StopStation {
+func (r *BifrostData) GetFptfStop(stop uint64) *fptf.StopStation {
 	id := ""
 	name := ""
 
@@ -127,13 +127,13 @@ func (r *RaptorData) GetFptfStop(stop uint64) *fptf.StopStation {
 	}
 }
 
-func (r *RaptorData) GetTime(ms uint64) fptf.TimeNullable {
+func (r *BifrostData) GetTime(ms uint64) fptf.TimeNullable {
 	return fptf.TimeNullable{
 		Time: time.Unix(int64(ms/1000), int64(ms%1000)*1000000),
 	}
 }
 
-func GetTripFromTrip(r *RaptorData, round map[uint64]StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
+func GetTripFromTrip(r *BifrostData, round map[uint64]StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
 	trip := r.Trips[arrival.Trip]
 	routeKey := r.TripToRoute[arrival.Trip]
 	route := r.Routes[routeKey]
@@ -159,7 +159,7 @@ func GetTripFromTrip(r *RaptorData, round map[uint64]StopArrival, arrival StopAr
 		}
 	}
 
-	gtfsRouteKey := r.RaptorToGtfsRoutes[routeKey]
+	gtfsRouteKey := r.GtfsRouteIndex[routeKey]
 	gtfsRoute := r.RouteInformation[gtfsRouteKey]
 	gtfsTrip := r.TripInformation[arrival.Trip]
 
