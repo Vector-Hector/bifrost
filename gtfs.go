@@ -475,6 +475,9 @@ func (b *Bifrost) AddGtfs(directory string) error {
 		RouteInformation: routeInformation,
 		TripInformation:  tripInformation,
 		TripToRoute:      tripToRoute,
+
+		StreetGraph: make([][]Arc, len(stops)),
+		NodesIndex:  make(map[int64]uint64),
 	})
 
 	return nil

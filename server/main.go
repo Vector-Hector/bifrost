@@ -13,7 +13,8 @@ func main() {
 	fmt.Println("Loading raptor data")
 	b := bifrost.DefaultBifrost
 	err := b.LoadData(&bifrost.LoadOptions{
-		StreetPaths: []string{"../data/mvv/oberbayern.csv"},
+		OsmPaths: []string{"../data/mvv/oberbayern-latest.osm.pbf"},
+		//OsmPaths:    []string{"../data/mvv/oberbayern.csv"},
 		GtfsPaths:   []string{"../data/mvv/gtfs/"},
 		BifrostPath: "../data/mvv/munich.bifrost",
 	})

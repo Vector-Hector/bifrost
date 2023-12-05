@@ -12,7 +12,7 @@ var r *Rounds
 func init() {
 	b = DefaultBifrost
 	err := b.LoadData(&LoadOptions{
-		StreetPaths: []string{"data/mvv/oberbayern.csv"},
+		OsmPaths:    []string{"data/mvv/oberbayern-latest.osm.pbf"},
 		GtfsPaths:   []string{"data/mvv/gtfs/"},
 		BifrostPath: "data/mvv/munich.bifrost",
 	})
@@ -40,13 +40,11 @@ func TestRaptor(t *testing.T) {
 		panic(err)
 	}
 
-	for i := 0; i < 100; i++ {
-		_, err = b.Route(r, []SourceLocation{{
-			Location:  origin,
-			Departure: departureTime,
-		}}, dest, false, false)
-		if err != nil {
-			panic(err)
-		}
+	_, err = b.Route(r, []SourceLocation{{
+		Location:  origin,
+		Departure: departureTime,
+	}}, dest, false, false)
+	if err != nil {
+		panic(err)
 	}
 }

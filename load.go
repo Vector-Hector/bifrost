@@ -9,7 +9,7 @@ import (
 )
 
 type LoadOptions struct {
-	StreetPaths []string // paths to street CSV files
+	OsmPaths    []string // paths to osm pbf files
 	GtfsPaths   []string // path to GTFS zip files
 	BifrostPath string   // path to bifrost cache
 }
@@ -49,11 +49,11 @@ func (b *Bifrost) LoadData(load *LoadOptions) error {
 
 	fmt.Println("reading gtfs data took", time.Since(t))
 
-	for _, streetPath := range load.StreetPaths {
+	for _, streetPath := range load.OsmPaths {
 		fmt.Println("reading street data from", streetPath)
 
 		localT := time.Now()
-		err = b.AddStreet(streetPath)
+		err = b.AddOSM(streetPath)
 		if err != nil {
 			return fmt.Errorf("error reading street data: %w", err)
 		}
