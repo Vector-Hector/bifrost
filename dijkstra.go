@@ -3,6 +3,7 @@ package bifrost
 import (
 	"container/heap"
 	"fmt"
+	"github.com/Vector-Hector/fptf"
 	util "github.com/Vector-Hector/goutil"
 	"time"
 )
@@ -51,7 +52,7 @@ func (pq *priorityQueue) update(node *dijkstraNode, arrival uint64, targetWalkTi
 	heap.Fix(pq, node.Index)
 }
 
-func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []Source, destKey uint64, debug bool) {
+func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
 	t := time.Now()
 
 	rounds.NewSession()
@@ -86,14 +87,14 @@ func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []Source, destKey uint64
 		fmt.Println("Getting transfer times took", time.Since(t))
 	}
 
+	_, ok := rounds.EarliestArrivals[destKey]
+	if !ok {
+		panic("destination unreachable")
+	}
+
+	journey := b.ReconstructJourney(destKey, 1, rounds)
+
 	if debug {
-		arrival := rounds.EarliestArrivals[destKey]
-		if arrival == ArrivalTimeNotReached {
-			panic("destination unreachable")
-		}
-
-		journey := b.ReconstructJourney(destKey, 1, rounds)
-
 		dep := journey.GetDeparture()
 		arr := journey.GetArrival()
 
@@ -105,6 +106,8 @@ func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []Source, destKey uint64
 		fmt.Println("Journey:")
 		util.PrintJSON(journey)
 	}
+
+	return journey, nil
 }
 
 func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {

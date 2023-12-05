@@ -2,7 +2,6 @@ package bifrost
 
 import (
 	"fmt"
-	"github.com/kyroy/kdtree"
 	"sync"
 	"time"
 )
@@ -10,17 +9,6 @@ import (
 // ConnectStopsToVertices connects stops to street graph using knn and the Bifrost parameters.
 func (b *Bifrost) ConnectStopsToVertices() {
 	t := time.Now()
-
-	verticesAsPoints := make([]kdtree.Point, len(b.Data.Vertices))
-	for i, v := range b.Data.Vertices {
-		verticesAsPoints[i] = &GeoPoint{
-			Latitude:  v.Latitude,
-			Longitude: v.Longitude,
-			VertKey:   uint64(i),
-		}
-	}
-
-	tree := kdtree.New(verticesAsPoints)
 
 	fmt.Println("Building kd-tree took", time.Since(t))
 
@@ -35,28 +23,22 @@ func (b *Bifrost) ConnectStopsToVertices() {
 			continue // only connect stops
 		}
 
-		stopPoint := &GeoPoint{
-			Latitude:  stop.Latitude,
-			Longitude: stop.Longitude,
-			VertKey:   uint64(i),
-		}
-
-		nearest := tree.KNN(stopPoint, 30)
+		nearest := b.Data.VertexTree.KNN(&stop, 30)
 
 		for _, point := range nearest {
 			streetVert := point.(*GeoPoint)
 
-			if !b.fastDistWithin(stopPoint, streetVert, b.MaxStopsConnectionSeconds) {
+			if !b.fastDistWithin(&stop, streetVert, b.MaxStopsConnectionSeconds) {
 				break
 			}
 
-			dist := b.DistanceMs(&b.Data.Vertices[i], &b.Data.Vertices[streetVert.VertKey])
+			dist := b.DistanceMs(&stop, streetVert)
 
 			if dist > b.MaxStopsConnectionSeconds {
 				break
 			}
 
-			fromKey := stopPoint.VertKey
+			fromKey := uint64(i)
 			toKey := streetVert.VertKey
 
 			fromLock := &locks[fromKey]
@@ -80,17 +62,17 @@ func (b *Bifrost) ConnectStopsToVertices() {
 	fmt.Println("Connecting stops to street graph took", time.Since(t))
 }
 
-func (b *Bifrost) MergeData(other *BifrostData) {
+func (b *Bifrost) MergeData(other *RoutingData) {
 	b.Data = MergeData(b.Data, other)
 }
 
-// MergeData merges two BifrostData structs. It only concatenates the vertices and edges. Use ConnectStopsToVertices
+// MergeData merges two RoutingData structs. It only concatenates the vertices and edges. Use ConnectStopsToVertices
 // to connect stops to the street graph. IMPORTANT: This algorithm may change and re-use the data from both structs.
 // Also note, that using multiple transit feeds may break things like the stops index due to duplicate stop ids.
 // Multiple street graphs are not supported as there is no way of connecting them.
 // todo: fix stops index for multiple transit feeds
 // todo: add support for multiple street graphs
-func MergeData(a *BifrostData, b *BifrostData) *BifrostData {
+func MergeData(a *RoutingData, b *RoutingData) *RoutingData {
 	if a == nil {
 		return b
 	}
@@ -113,7 +95,7 @@ func MergeData(a *BifrostData, b *BifrostData) *BifrostData {
 	bServiceOffset := uint32(len(a.Services))
 	bGtfsRouteOffset := uint32(len(a.RouteInformation))
 
-	return &BifrostData{
+	result := &RoutingData{
 		MaxTripDayLength: maxTripDayLength,
 		Services:         append(a.Services, b.Services...),
 		Routes:           mergeRoutes(a.Routes, b.Routes, bVertexOffset, bTripOffset),
@@ -129,9 +111,13 @@ func MergeData(a *BifrostData, b *BifrostData) *BifrostData {
 		TripInformation:  append(a.TripInformation, b.TripInformation...),
 		TripToRoute:      mergeTripToRoute(a.TripToRoute, b.TripToRoute, bRouteOffset),
 	}
+
+	result.RebuildVertexTree()
+
+	return result
 }
 
-func (r *BifrostData) EnsureSliceLengths() {
+func (r *RoutingData) EnsureSliceLengths() {
 	vertexCount := len(r.Vertices)
 	if len(r.StopToRoutes) == 0 {
 		r.StopToRoutes = make([][]StopRoutePair, vertexCount)

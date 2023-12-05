@@ -2,20 +2,44 @@ package bifrost
 
 import (
 	"fmt"
+	"github.com/Vector-Hector/fptf"
 	util "github.com/Vector-Hector/goutil"
 	"time"
 )
 
-type Source struct {
-	StopKey   uint64    // stop key in BifrostData
+type SourceKey struct {
+	StopKey   uint64    // stop key in RoutingData
 	Departure time.Time // departure time
+}
+
+type SourceLocation struct {
+	Location  *fptf.Location
+	Departure time.Time
 }
 
 func timeToMs(day time.Time) uint64 {
 	return uint64(day.UnixMilli())
 }
 
-func (b *Bifrost) Route(rounds *Rounds, origins []Source, destKey uint64, debug bool) {
+func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Location, onlyWalk bool, debug bool) (*fptf.Journey, error) {
+	originKeys, err := b.matchSourceLocations(origins)
+	if err != nil {
+		return nil, err
+	}
+
+	destKey, err := b.matchTargetLocation(dest)
+	if err != nil {
+		return nil, err
+	}
+
+	if onlyWalk {
+		return b.RouteOnlyWalk(rounds, originKeys, destKey, debug)
+	}
+
+	return b.RouteUsingKeys(rounds, originKeys, destKey, debug)
+}
+
+func (b *Bifrost) RouteUsingKeys(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
 	t := time.Now()
 
 	rounds.NewSession()
@@ -122,15 +146,15 @@ func (b *Bifrost) Route(rounds *Rounds, origins []Source, destKey uint64, debug 
 		fmt.Println("Done in", time.Since(calcStart))
 	}
 
+	_, ok := rounds.EarliestArrivals[destKey]
+	if !ok {
+		return nil, fmt.Errorf("destination unreachable")
+	}
+
+	journey := b.ReconstructJourney(destKey, lastRound, rounds)
+
 	if debug {
-		arrival := rounds.EarliestArrivals[destKey]
-		if arrival == ArrivalTimeNotReached {
-			panic("destination unreachable")
-		}
-
 		fmt.Println("max tts size", len(rounds.Rounds[lastRound]))
-
-		journey := b.ReconstructJourney(destKey, lastRound, rounds)
 
 		dep := journey.GetDeparture()
 		arr := journey.GetArrival()
@@ -143,6 +167,8 @@ func (b *Bifrost) Route(rounds *Rounds, origins []Source, destKey uint64, debug 
 		fmt.Println("Journey:")
 		util.PrintJSON(journey)
 	}
+
+	return journey, nil
 }
 
 func (b *Bifrost) runRaptorRound(rounds *Rounds, target uint64, current int, debug bool) {
@@ -250,7 +276,7 @@ func (b *Bifrost) runRaptorRound(rounds *Rounds, target uint64, current int, deb
 	}
 }
 
-func (r *BifrostData) tripRunsOnDay(trip *Trip, day uint32) bool {
+func (r *RoutingData) tripRunsOnDay(trip *Trip, day uint32) bool {
 	service := r.Services[trip.Service]
 	if day < service.StartDay || day > service.EndDay {
 		return false
@@ -301,7 +327,7 @@ func binarySearchDays(days []uint32, day uint32) int {
 	return left
 }
 
-func (r *BifrostData) earliestTrip(routeKey uint32, stopSeqKey uint32, minDeparture uint64) (*Trip, uint32, uint32) {
+func (r *RoutingData) earliestTrip(routeKey uint32, stopSeqKey uint32, minDeparture uint64) (*Trip, uint32, uint32) {
 	day := uint32(minDeparture / uint64(DayInMs))
 	minDepartureInDay := uint32(minDeparture % uint64(DayInMs))
 
@@ -317,7 +343,7 @@ func (r *BifrostData) earliestTrip(routeKey uint32, stopSeqKey uint32, minDepart
 	return nil, 0, 0
 }
 
-func (r *BifrostData) earliestTripInDay(routeKey uint32, stopSeqKey uint32, minDepartureInDay uint32, day uint32) (*Trip, uint32) {
+func (r *RoutingData) earliestTripInDay(routeKey uint32, stopSeqKey uint32, minDepartureInDay uint32, day uint32) (*Trip, uint32) {
 	route := r.Routes[routeKey]
 	routeStopKey := uint64(routeKey)<<32 | uint64(stopSeqKey)
 
@@ -329,7 +355,7 @@ func (r *BifrostData) earliestTripInDay(routeKey uint32, stopSeqKey uint32, minD
 	return r.earliestTripReordered(route, stopSeqKey, minDepartureInDay, day, reorder)
 }
 
-func (r *BifrostData) earliestTripOrdered(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32) (*Trip, uint32) {
+func (r *RoutingData) earliestTripOrdered(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32) (*Trip, uint32) {
 	if r.Trips[route.Trips[0]].StopTimes[stopSeqKey].Departure >= minDepartureInDay {
 		return r.earliestExistentTripOrdered(route, day, 0)
 	}
@@ -341,7 +367,7 @@ func (r *BifrostData) earliestTripOrdered(route *Route, stopSeqKey uint32, minDe
 	return r.earliestTripBinarySearch(route, stopSeqKey, minDepartureInDay, day, 0, len(route.Trips)-1)
 }
 
-func (r *BifrostData) earliestExistentTripOrdered(route *Route, day uint32, indexStart int) (*Trip, uint32) {
+func (r *RoutingData) earliestExistentTripOrdered(route *Route, day uint32, indexStart int) (*Trip, uint32) {
 	for i := indexStart; i < len(route.Trips); i++ {
 		trip := r.Trips[route.Trips[i]]
 		if r.tripRunsOnDay(trip, day) {
@@ -353,7 +379,7 @@ func (r *BifrostData) earliestExistentTripOrdered(route *Route, day uint32, inde
 
 // binary searches for the earliest trip, starting later than minDepartureInDay at stopSeqKey.
 // this assumes that left is below minDeparture and right is above minDeparture
-func (r *BifrostData) earliestTripBinarySearch(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32, left int, right int) (*Trip, uint32) {
+func (r *RoutingData) earliestTripBinarySearch(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32, left int, right int) (*Trip, uint32) {
 	mid := (left + right) / 2
 
 	if left == mid {
@@ -370,7 +396,7 @@ func (r *BifrostData) earliestTripBinarySearch(route *Route, stopSeqKey uint32, 
 	return r.earliestTripBinarySearch(route, stopSeqKey, minDepartureInDay, day, left, mid)
 }
 
-func (r *BifrostData) earliestExistentTripReordered(route *Route, day uint32, indexStart int, reorder []uint32) (*Trip, uint32) {
+func (r *RoutingData) earliestExistentTripReordered(route *Route, day uint32, indexStart int, reorder []uint32) (*Trip, uint32) {
 	for i := indexStart; i < len(route.Trips); i++ {
 		trip := r.Trips[route.Trips[reorder[i]]]
 		if r.tripRunsOnDay(trip, day) {
@@ -380,7 +406,7 @@ func (r *BifrostData) earliestExistentTripReordered(route *Route, day uint32, in
 	return nil, 0
 }
 
-func (r *BifrostData) earliestTripReordered(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32, reorder []uint32) (*Trip, uint32) {
+func (r *RoutingData) earliestTripReordered(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32, reorder []uint32) (*Trip, uint32) {
 	if r.Trips[route.Trips[reorder[0]]].StopTimes[stopSeqKey].Departure >= minDepartureInDay {
 		return r.earliestExistentTripReordered(route, day, 0, reorder)
 	}
@@ -394,7 +420,7 @@ func (r *BifrostData) earliestTripReordered(route *Route, stopSeqKey uint32, min
 
 // binary searches for the earliest trip, starting later than minDeparture at stopSeqKey.
 // this assumes that left is below minDeparture and right is above minDeparture
-func (r *BifrostData) earliestTripBinarySearchReordered(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32, reorder []uint32, left int, right int) (*Trip, uint32) {
+func (r *RoutingData) earliestTripBinarySearchReordered(route *Route, stopSeqKey uint32, minDepartureInDay uint32, day uint32, reorder []uint32, left int, right int) (*Trip, uint32) {
 	mid := (left + right) / 2
 
 	if left == mid {
@@ -409,4 +435,50 @@ func (r *BifrostData) earliestTripBinarySearchReordered(route *Route, stopSeqKey
 	}
 
 	return r.earliestTripBinarySearchReordered(route, stopSeqKey, minDepartureInDay, day, reorder, left, mid)
+}
+
+func (b *Bifrost) matchSourceLocations(origins []SourceLocation) ([]SourceKey, error) {
+	originKeys := make([]SourceKey, 0)
+
+	for _, origin := range origins {
+		loc := &GeoPoint{
+			Latitude:  origin.Location.Latitude,
+			Longitude: origin.Location.Longitude,
+		}
+
+		vertices := b.Data.VertexTree.KNN(loc, 10)
+
+		for i, vertex := range vertices {
+			if i != 0 && b.DistanceMs(loc, vertex.(*GeoPoint)) >= b.MaxStopsConnectionSeconds {
+				return nil, fmt.Errorf("no stop within tolerance found for location %v", loc)
+			}
+			originKeys = append(originKeys, SourceKey{
+				StopKey:   vertex.(*GeoPoint).VertKey,
+				Departure: origin.Departure,
+			})
+		}
+	}
+
+	return originKeys, nil
+}
+
+func (b *Bifrost) matchTargetLocation(dest *fptf.Location) (uint64, error) {
+	loc := &GeoPoint{
+		Latitude:  dest.Latitude,
+		Longitude: dest.Longitude,
+	}
+
+	vertices := b.Data.VertexTree.KNN(loc, 1)
+
+	if len(vertices) == 0 {
+		return 0, fmt.Errorf("no stop within tolerance found for location %v", loc)
+	}
+
+	vert := vertices[0].(*GeoPoint)
+
+	if b.DistanceMs(loc, vert) >= b.MaxStopsConnectionSeconds {
+		return 0, fmt.Errorf("no stop within tolerance found for location %v", loc)
+	}
+
+	return vert.VertKey, nil
 }

@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// AddStreet reads the street data from StreetPath and adds it to the BifrostData or creates a new one containing
+// AddStreet reads the street data from StreetPath and adds it to the RoutingData or creates a new one containing
 // only the street data. Obtain the csv street files from osm2ch.
 func (b *Bifrost) AddStreet(filePath string) error {
 	filePath = strings.TrimSuffix(filePath, ".csv")
@@ -21,7 +21,7 @@ func (b *Bifrost) AddStreet(filePath string) error {
 
 	r := b.Data
 	if r == nil {
-		r = &BifrostData{
+		r = &RoutingData{
 			Vertices: make([]Vertex, 0),
 		}
 	}
@@ -102,6 +102,9 @@ func (b *Bifrost) AddStreet(filePath string) error {
 	}
 
 	fmt.Println("Reading files took", time.Since(t))
+
+	b.Data = r
+	b.Data.RebuildVertexTree()
 
 	return nil
 }

@@ -14,7 +14,6 @@ func (b *Bifrost) ReconstructJourney(destKey uint64, lastRound int, rounds *Roun
 	position := destKey
 
 	for i := lastRound; i > 0; i-- {
-		fmt.Println("reconstructing round", i, "at position", position)
 		arr, ok := rounds.Rounds[i][position]
 
 		if !ok {
@@ -26,14 +25,12 @@ func (b *Bifrost) ReconstructJourney(destKey uint64, lastRound int, rounds *Roun
 		}
 
 		if arr.Trip == TripIdTransfer {
-			fmt.Println("round", i, "is a transfer")
 			trip, newPos := GetTripFromTransfer(b.Data, rounds.Rounds[i], position)
 			position = newPos
 			trips = append(trips, trip)
 			continue
 		}
 
-		fmt.Println("round", i, "is a trip")
 		trip, newPos := GetTripFromTrip(b.Data, rounds.Rounds[i-1], arr)
 		position = newPos
 		trips = append(trips, trip)
@@ -50,7 +47,7 @@ func (b *Bifrost) ReconstructJourney(destKey uint64, lastRound int, rounds *Roun
 	}
 }
 
-func GetTripFromTransfer(r *BifrostData, round map[uint64]StopArrival, destination uint64) (*fptf.Trip, uint64) {
+func GetTripFromTransfer(r *RoutingData, round map[uint64]StopArrival, destination uint64) (*fptf.Trip, uint64) {
 	position := destination
 	arrival := round[position]
 	path := make([]uint64, 1)
@@ -106,7 +103,7 @@ func GetTripFromTransfer(r *BifrostData, round map[uint64]StopArrival, destinati
 	return trip, position
 }
 
-func (r *BifrostData) GetFptfStop(stop uint64) *fptf.StopStation {
+func (r *RoutingData) GetFptfStop(stop uint64) *fptf.StopStation {
 	id := ""
 	name := ""
 
@@ -127,13 +124,13 @@ func (r *BifrostData) GetFptfStop(stop uint64) *fptf.StopStation {
 	}
 }
 
-func (r *BifrostData) GetTime(ms uint64) fptf.TimeNullable {
+func (r *RoutingData) GetTime(ms uint64) fptf.TimeNullable {
 	return fptf.TimeNullable{
 		Time: time.Unix(int64(ms/1000), int64(ms%1000)*1000000),
 	}
 }
 
-func GetTripFromTrip(r *BifrostData, round map[uint64]StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
+func GetTripFromTrip(r *RoutingData, round map[uint64]StopArrival, arrival StopArrival) (*fptf.Trip, uint64) {
 	trip := r.Trips[arrival.Trip]
 	routeKey := r.TripToRoute[arrival.Trip]
 	route := r.Routes[routeKey]

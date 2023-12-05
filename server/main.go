@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/Vector-Hector/bifrost"
+	"github.com/Vector-Hector/fptf"
 	"github.com/gin-gonic/gin"
 	"runtime/debug"
 	"time"
@@ -47,11 +48,17 @@ func main() {
 			}
 		}()
 
-		originID := "de:09162:6"
-		destID := "de:09162:2"
+		origin := &fptf.Location{
+			Name:      "München Hbf",
+			Longitude: 11.5596949,
+			Latitude:  48.140262,
+		}
 
-		originKey := b.Data.StopsIndex[originID]
-		destKey := b.Data.StopsIndex[destID]
+		dest := &fptf.Location{
+			Name:      "Marienplatz",
+			Longitude: 11.5757167,
+			Latitude:  48.1378071,
+		}
 
 		departureTime, err := time.Parse(time.RFC3339, "2023-12-12T08:30:00Z")
 		if err != nil {
@@ -59,10 +66,10 @@ func main() {
 		}
 
 		t := time.Now()
-		b.Route(rounds, []bifrost.Source{{
-			StopKey:   originKey,
+		_, err = b.Route(rounds, []bifrost.SourceLocation{{
+			Location:  origin,
 			Departure: departureTime,
-		}}, destKey, true)
+		}}, dest, false, true)
 
 		fmt.Println("Routing took", time.Since(t))
 

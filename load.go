@@ -28,6 +28,7 @@ func (b *Bifrost) LoadData(load *LoadOptions) error {
 
 	if cacheExists {
 		b.AddBifrostData(load.BifrostPath)
+		b.Data.RebuildVertexTree()
 		return nil
 	}
 
@@ -91,7 +92,7 @@ func (b *Bifrost) AddBifrostData(fileName string) {
 	}
 	defer read.Close()
 
-	r := &BifrostData{}
+	r := &RoutingData{}
 
 	decoder := json.NewDecoder(read)
 	err = decoder.Decode(r)

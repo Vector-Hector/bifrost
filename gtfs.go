@@ -49,8 +49,12 @@ func getUnixDay(date string) uint32 {
 	return uint32(uint64(t.UnixMilli()) / uint64(DayInMs))
 }
 
-func (b *Bifrost) DistanceMs(from *Vertex, to *Vertex) uint32 {
-	distInKm := Distance(from.Latitude, from.Longitude, to.Latitude, to.Longitude, "K")
+func (b *Bifrost) DistanceMs(from kdtree.Point, to kdtree.Point) uint32 {
+	if from.Dimensions() != 2 || to.Dimensions() != 2 {
+		panic("invalid dimension")
+	}
+
+	distInKm := Distance(from.Dimension(0), from.Dimension(1), to.Dimension(0), to.Dimension(1), "K")
 	distInMs := (distInKm * 1000) / b.WalkingSpeed
 	res := uint32(math.Ceil(distInMs))
 	if res == 0 {
@@ -457,7 +461,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 		}
 	}
 
-	b.MergeData(&BifrostData{
+	b.MergeData(&RoutingData{
 		MaxTripDayLength: maxTripDayLength,
 		Vertices:         stops,
 		StopsIndex:       stopsIndex,
@@ -476,14 +480,18 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	return nil
 }
 
-func (b *Bifrost) fastDistWithin(from *GeoPoint, to *GeoPoint, maxMsDist uint32) bool {
-	latDiffInMs := (math.Abs(from.Latitude-to.Latitude) * 111 * 1000) / b.WalkingSpeed
+func (b *Bifrost) fastDistWithin(from kdtree.Point, to kdtree.Point, maxMsDist uint32) bool {
+	if from.Dimensions() != 2 || to.Dimensions() != 2 {
+		panic("invalid dimension")
+	}
+
+	latDiffInMs := (math.Abs(from.Dimension(0)-to.Dimension(0)) * 111 * 1000) / b.WalkingSpeed
 
 	if latDiffInMs > float64(maxMsDist) {
 		return false
 	}
 
-	lonDiffInSecs := (math.Abs(from.Longitude-to.Longitude) * 111 * math.Cos(from.Latitude) * 1000) / b.WalkingSpeed
+	lonDiffInSecs := (math.Abs(from.Dimension(1)-to.Dimension(1)) * 111 * math.Cos(from.Dimension(0)) * 1000) / b.WalkingSpeed
 
 	if lonDiffInSecs > float64(maxMsDist) {
 		return false

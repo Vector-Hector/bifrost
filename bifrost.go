@@ -1,6 +1,9 @@
 package bifrost
 
-import "fmt"
+import (
+	"fmt"
+	"github.com/kyroy/kdtree"
+)
 
 const DayInMs uint32 = 24 * 60 * 60 * 1000
 
@@ -19,7 +22,7 @@ type Bifrost struct {
 	MaxWalkingMs              uint32  // duration of walks not allowed to be higher than this when transferring
 	MaxStopsConnectionSeconds uint32  // max length of added arcs between stops and street graph in deciseconds
 
-	Data *BifrostData
+	Data *RoutingData
 }
 
 var DefaultBifrost = &Bifrost{
@@ -30,29 +33,32 @@ var DefaultBifrost = &Bifrost{
 	MaxStopsConnectionSeconds: 60 * 1000 * 5,
 }
 
-type BifrostData struct {
-	MaxTripDayLength uint32 // number of days to go backwards in time (for trips that end after midnight or multiple days later than the start)
+type RoutingData struct {
+	MaxTripDayLength uint32 `json:"maxTripDayLength"` // number of days to go backwards in time (for trips that end after midnight or multiple days later than the start)
 
-	Services []*Service
+	Services []*Service `json:"services"`
 
-	Routes       []*Route
-	StopToRoutes [][]StopRoutePair
-	Trips        []*Trip
-	StreetGraph  [][]Arc
+	Routes       []*Route          `json:"routes"`
+	StopToRoutes [][]StopRoutePair `json:"stopToRoutes"`
+	Trips        []*Trip           `json:"trips"`
+	StreetGraph  [][]Arc           `json:"streetGraph"`
 
-	Reorders map[uint64][]uint32
+	Reorders map[uint64][]uint32 `json:"reorders"`
 
 	// for reconstructing journeys after routing
-	Vertices         []Vertex
-	StopsIndex       map[string]uint64 // gtfs stop id -> vertex index
-	NodesIndex       map[int64]uint64  // csv vertex id -> vertex index
-	GtfsRouteIndex   []uint32          // route index -> gtfs route index
-	RouteInformation []*RouteInformation
-	TripInformation  []*TripInformation
-	TripToRoute      []uint32
+	Vertices         []Vertex            `json:"vertices"`
+	StopsIndex       map[string]uint64   `json:"stopsIndex"`     // gtfs stop id -> vertex index
+	NodesIndex       map[int64]uint64    `json:"nodesIndex"`     // csv vertex id -> vertex index
+	GtfsRouteIndex   []uint32            `json:"gtfsRouteIndex"` // route index -> gtfs route index
+	RouteInformation []*RouteInformation `json:"routeInformation"`
+	TripInformation  []*TripInformation  `json:"tripInformation"`
+	TripToRoute      []uint32            `json:"tripToRoute"` // trip index -> route index
+
+	// for finding vertices by location. points are GeoPoint
+	VertexTree *kdtree.KDTree `json:"-"`
 }
 
-func (r *BifrostData) PrintStats() {
+func (r *RoutingData) PrintStats() {
 	fmt.Println("vertices", len(r.Vertices))
 	fmt.Println("routes", len(r.Routes))
 	fmt.Println("trips", len(r.Trips))
@@ -61,6 +67,19 @@ func (r *BifrostData) PrintStats() {
 	fmt.Println("reorders", len(r.Reorders))
 	fmt.Println("services", len(r.Services))
 	fmt.Println("max trip day length", r.MaxTripDayLength)
+}
+
+func (r *RoutingData) RebuildVertexTree() {
+	verticesAsPoints := make([]kdtree.Point, len(r.Vertices))
+	for i, v := range r.Vertices {
+		verticesAsPoints[i] = &GeoPoint{
+			Latitude:  v.Latitude,
+			Longitude: v.Longitude,
+			VertKey:   uint64(i),
+		}
+	}
+
+	r.VertexTree = kdtree.New(verticesAsPoints)
 }
 
 type StopArrival struct {
