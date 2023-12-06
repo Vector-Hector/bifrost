@@ -103,9 +103,9 @@ func benchmarkFunction(bounds *Bounds, departureTime time.Time, samples int, thr
 		<-done
 	}
 
-	globalAverage := time.Since(start) / time.Duration(samples)
+	globalAverage := time.Since(start) / time.Duration(counter)
 
-	return time.Duration(totalNs / int64(samples)), globalAverage
+	return time.Duration(totalNs / int64(counter)), globalAverage
 }
 
 func benchmarkSingleThreaded(bounds *Bounds, departureTime time.Time, samples int, toBenchmark map[string]Router) {
