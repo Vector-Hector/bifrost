@@ -219,6 +219,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 		routeIndex[route.ID] = uint32(index)
 		routeInformation[index] = &RouteInformation{
 			ShortName: route.ShortName,
+			RouteId:   route.ID,
 		}
 		return true
 	})
@@ -249,6 +250,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 		procTripsIndex[trip.ID] = uint32(index)
 		tripInformation[index] = &TripInformation{
 			Headsign: trip.Headsign,
+			TripId:   trip.ID,
 		}
 		return true
 	})

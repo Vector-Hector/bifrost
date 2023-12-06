@@ -191,6 +191,7 @@ func GetTripFromTrip(r *RoutingData, round map[uint64]StopArrival, arrival StopA
 		Arrival:     arr,
 		Stopovers:   stopovers,
 		Line: &fptf.Line{
+			Id:   gtfsTrip.TripId,
 			Mode: fptf.ModeTrain,
 			Name: routeName,
 		},

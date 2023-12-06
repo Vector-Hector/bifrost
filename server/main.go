@@ -44,6 +44,7 @@ func main() {
 	flag.Var(&gtfsPath, "gtfs", "path to a gtfs zip file")
 	bifrostPath := flag.String("bifrost", "data.bifrost", "path to bifrost cache")
 	numHandlerThreads := flag.Int("threads", 12, "number of handler threads")
+	onlyBuild := flag.Bool("only-build", false, "only build the bifrost cache")
 
 	flag.Parse()
 
@@ -61,6 +62,10 @@ func main() {
 	}
 
 	fmt.Println("Raptor data loaded")
+
+	if *onlyBuild {
+		return
+	}
 
 	roundChan := make(chan *bifrost.Rounds, *numHandlerThreads)
 

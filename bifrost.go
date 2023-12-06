@@ -27,7 +27,7 @@ type Bifrost struct {
 
 var DefaultBifrost = &Bifrost{
 	TransferLimit:             4,
-	TransferPaddingMs:         0,
+	TransferPaddingMs:         3 * 60 * 1000,
 	WalkingSpeed:              0.8 * 0.001,
 	MaxWalkingMs:              60 * 1000 * 15,
 	MaxStopsConnectionSeconds: 60 * 1000 * 5,
@@ -181,8 +181,10 @@ type Service struct {
 
 type RouteInformation struct {
 	ShortName string
+	RouteId   string
 }
 
 type TripInformation struct {
 	Headsign string
+	TripId   string
 }
