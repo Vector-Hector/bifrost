@@ -82,14 +82,6 @@ func (r *RoutingData) RebuildVertexTree() {
 	r.VertexTree = kdtree.New(verticesAsPoints)
 }
 
-type StopArrival struct {
-	Arrival uint64 // arrival time in unix ms
-	Trip    uint32 // trip id, 0xffffffff specifies a transfer, 0xfffffffe specifies no change compared to previous round
-
-	EnterKey  uint64 // stop sequence key in route for trips, vertex key for transfers
-	Departure uint64 // departure day for trips, departure time in unix ms for transfers
-}
-
 type StopContext struct {
 	Id   string
 	Name string

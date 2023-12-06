@@ -138,7 +138,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
 		heap.Push(&queue, &dijkstraNode{
 			Arrival:  sa.Arrival,
 			Vertex:   stop,
-			WalkTime: 0,
+			WalkTime: sa.WalkTime,
 		})
 
 		delete(rounds.MarkedStopsForTransfer, stop)
@@ -171,6 +171,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
 				Trip:      TripIdTransfer,
 				EnterKey:  node.Vertex,
 				Departure: node.Arrival,
+				WalkTime:  targetWalkTime,
 			}
 			rounds.MarkedStops[arc.Target] = true
 			rounds.EarliestArrivals[arc.Target] = arrival
