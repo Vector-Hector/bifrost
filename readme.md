@@ -4,6 +4,17 @@ A lightweight, blazing fast, multi-modal routing engine in go. It can route on p
 features are still
 limited compared to other routing engines, but it is already quite fast and easy to use.
 
+## Benchmark
+
+We compare our routing engine to OpenTripPlanner due to its similarity in that they are both multi-modal routing
+engines. It is not entirely fair, because our current implementation is more simple. See [here](benchmark/benchmark.md)
+for more details on the benchmark methodology and definitions. Here are the results on multi-modal routing in Munich:
+
+| Engine  | Global Average Execution Time | Local Average Execution Time | Memory Usage |
+|---------|-------------------------------|------------------------------|--------------|
+| Bifrost | 36.1ms                        | 422.4ms                      | 800 MB       |
+| OTP     | 85.8ms                        | 996.8ms                      | 4026 MB      |
+
 ## Usage
 
 You can use it either as a library or as a command line tool. The cli will start a server that you can query with

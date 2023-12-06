@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/Vector-Hector/bifrost"
 	"github.com/Vector-Hector/fptf"
 	"math/rand"
 	"sync/atomic"
@@ -53,7 +52,7 @@ func main() {
 	tz := time.FixedZone("Europe/Berlin", 3600)
 	departureTime = departureTime.In(tz)
 
-	threads := 4
+	threads := 12
 
 	benchmarkMultiThreaded(bounds, departureTime, samples, threads, toBenchmark)
 }
@@ -106,36 +105,4 @@ func benchmarkFunction(bounds *Bounds, departureTime time.Time, samples int, thr
 	globalAverage := time.Since(start) / time.Duration(counter)
 
 	return time.Duration(totalNs / int64(counter)), globalAverage
-}
-
-func benchmarkSingleThreaded(bounds *Bounds, departureTime time.Time, samples int, toBenchmark map[string]Router) {
-	totalDurations := make(map[string]time.Duration)
-
-	prog := bifrost.Progress{}
-
-	prog.Reset(uint64(samples))
-
-	for i := 0; i < samples; i++ {
-		prog.Increment()
-		prog.Print()
-
-		origin := bounds.GenerateRandomLocation()
-		dest := bounds.GenerateRandomLocation()
-
-		for name, router := range toBenchmark {
-			_, duration, err := router(origin, dest, departureTime, false)
-			if err != nil {
-				panic(err)
-			}
-			totalDurations[name] += duration
-		}
-	}
-
-	fmt.Println()
-
-	for name, duration := range totalDurations {
-		average := duration / time.Duration(samples)
-
-		fmt.Println(name, "took", average, "on average per route")
-	}
 }
