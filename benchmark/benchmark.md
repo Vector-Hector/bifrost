@@ -21,11 +21,11 @@ on 12 goroutines. We average the execution time over 100 runs. Two types of dura
 execution time that is the time it takes to finish all threads divided by number of calculated routes and the local
 average execution time that is the time it takes to finish one thread divided by number of calculated routes. Note, that
 the global average execution time also includes transformation from OTP format to FPTF, but this is negligible. The used
-memory by each server is measured by the Windows task manager.   
+memory by each server is measured by the Windows task manager.
 
 ## Results
 
 | Engine  | Global Average Execution Time | Local Average Execution Time | Memory Usage |
 |---------|-------------------------------|------------------------------|--------------|
-| Bifrost | 36.1ms                        | 422.4ms                      | 800 MB       |
-| OTP     | 85.8ms                        | 996.8ms                      | 4026 MB      |
+| Bifrost | 236.5ms                       | 2650.6ms                     | 8000 MB      |
+| OTP     | 869.2ms                       | 9517.4ms                     | 4026 MB      |

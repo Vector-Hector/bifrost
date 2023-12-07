@@ -39,7 +39,7 @@ func main() {
 
 	toBenchmark := map[string]Router{
 		"bifrost": RouteBifrost,
-		//"otp":     RouteOpenTripPlanner,
+		"otp":     RouteOpenTripPlanner,
 	}
 
 	rand.Seed(time.Now().UnixNano())
@@ -52,7 +52,7 @@ func main() {
 	tz := time.FixedZone("Europe/Berlin", 3600)
 	departureTime = departureTime.In(tz)
 
-	threads := 1
+	threads := 12
 
 	benchmarkMultiThreaded(bounds, departureTime, samples, threads, toBenchmark)
 }

@@ -60,6 +60,9 @@ func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Loc
 func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
 	// todo add vehicle support (take more of the vehicle bitmask into account, what if bicycle is taken with you on the train?)
 	// what if bicycle is taken with you on a car? what if that car is going to a train station and you take the bicycle with you on the train?
+
+	// todo investigate graph issues: some vertices are not reachable and can only be reached by choosing a close vertex as destKey instead
+
 	t := time.Now()
 
 	rounds.NewSession()
@@ -137,12 +140,6 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 
 		b.runTransferRound(rounds, destKey, ttsKey+1, VehicleTypeFoot, false)
 
-		for _, sa := range rounds.Rounds[ttsKey+1] {
-			if sa.Arrival < uint64(DayInMs*2) {
-				panic("arrival too small")
-			}
-		}
-
 		if debug {
 			fmt.Println("Getting transfer times took", time.Since(t))
 		}
@@ -177,6 +174,35 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 		// then, run a transfer round
 		b.runTransferRound(rounds, destKey, lastRound, VehicleTypeFoot, true)
 		lastRound++
+	}
+
+	_, ok = rounds.EarliestArrivals[destKey]
+	if !ok {
+		// look for very close, walkable vertices
+		loc := b.Data.Vertices[destKey]
+		nearest := b.Data.WalkableVertexTree.KNN(&loc, 30)
+
+		for _, point := range nearest {
+			streetVert := point.(*GeoPoint)
+
+			_, ok = rounds.EarliestArrivals[streetVert.VertKey]
+			if !ok {
+				continue
+			}
+
+			if !b.fastDistWithin(&loc, streetVert, b.MaxStopsConnectionSeconds) {
+				break
+			}
+
+			dist := b.DistanceWalkMs(&loc, streetVert)
+
+			if dist > b.MaxStopsConnectionSeconds {
+				break
+			}
+
+			destKey = streetVert.VertKey // replace destination with the closest reachable vertex
+			break
+		}
 	}
 
 	_, ok = rounds.EarliestArrivals[destKey]

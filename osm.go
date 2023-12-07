@@ -26,6 +26,7 @@ var carTags = []string{
 
 var bikeTags = []string{
 	"cycleway",
+	"path",
 	"footway",
 	"living_street",
 	"pedestrian",
@@ -44,6 +45,7 @@ var bikeTags = []string{
 
 var footTags = []string{
 	"footway",
+	"path",
 	"living_street",
 	"pedestrian",
 	"crossing",
