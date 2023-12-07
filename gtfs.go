@@ -49,18 +49,31 @@ func getUnixDay(date string) uint32 {
 	return uint32(uint64(t.UnixMilli()) / uint64(DayInMs))
 }
 
-func (b *Bifrost) DistanceWalkMs(from kdtree.Point, to kdtree.Point) uint32 {
+func (b *Bifrost) DistanceMs(from kdtree.Point, to kdtree.Point, vehicleType VehicleType) uint32 {
 	if from.Dimensions() != 2 || to.Dimensions() != 2 {
 		panic("invalid dimension")
 	}
 
 	distInKm := Distance(from.Dimension(0), from.Dimension(1), to.Dimension(0), to.Dimension(1), "K")
-	distInMs := (distInKm * 1000) / b.WalkingSpeed
+	distInMs := (distInKm * 1000) / b.GetMinAvgSpeed(vehicleType)
 	res := uint32(math.Ceil(distInMs))
 	if res == 0 {
 		return 1
 	}
 	return res
+}
+
+func (b *Bifrost) GetMinAvgSpeed(vehicleType VehicleType) float64 {
+	switch vehicleType {
+	case VehicleTypeCar:
+		return b.CarMinAvgSpeed
+	case VehicleTypeBike:
+		return b.CycleSpeed
+	case VehicleTypeFoot:
+		return b.WalkingSpeed
+	default:
+		panic("invalid vehicle type")
+	}
 }
 
 // Distance https://www.geodatasource.com/developers/go

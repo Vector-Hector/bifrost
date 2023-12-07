@@ -23,6 +23,7 @@ type Bifrost struct {
 	WalkingSpeed              float64 // in meters per ms
 	CycleSpeed                float64 // in meters per ms
 	CarMaxSpeed               float64 // in meters per ms
+	CarMinAvgSpeed            float64 // in meters per ms
 	MaxWalkingMs              uint32  // duration of walks not allowed to be higher than this per transfer
 	MaxCyclingMs              uint32  // duration of cycles not allowed to be higher than this per transfer
 	MaxStopsConnectionSeconds uint32  // max length of added arcs between stops and street graph in deciseconds
@@ -36,6 +37,7 @@ var DefaultBifrost = &Bifrost{
 	WalkingSpeed:              0.8 * 0.001,
 	CycleSpeed:                4.0 * 0.001,
 	CarMaxSpeed:               36.0 * 0.001,
+	CarMinAvgSpeed:            8.0 * 0.001,
 	MaxWalkingMs:              60 * 1000 * 15,
 	MaxCyclingMs:              60 * 1000 * 30,
 	MaxStopsConnectionSeconds: 60 * 1000 * 5,

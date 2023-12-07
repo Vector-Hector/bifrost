@@ -20,7 +20,8 @@ type dijkstraNode struct {
 	Arrival      uint64
 	Vertex       uint64
 	TransferTime uint32 // time in ms to walk or cycle to this stop
-	Index        int    // Index of the node in the heap
+	Score        uint64
+	Index        int // Index of the node in the heap
 }
 
 type priorityQueue []*dijkstraNode
@@ -31,7 +32,7 @@ func (pq *priorityQueue) Len() int {
 
 func (pq *priorityQueue) Less(i, j int) bool {
 	l := *pq
-	return l[i].Arrival < l[j].Arrival
+	return l[i].Score < l[j].Score
 }
 
 func (pq *priorityQueue) Swap(i, j int) {
@@ -133,6 +134,8 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 	queue := make(priorityQueue, 0)
 	heap.Init(&queue)
 
+	targetVertex := &b.Data.Vertices[target]
+
 	// perform dijkstra on street graph
 	for stop, marked := range rounds.MarkedStopsForTransfer {
 		if !marked {
@@ -152,6 +155,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 			Arrival:      sa.Arrival,
 			Vertex:       stop,
 			TransferTime: sa.TransferTime,
+			Score:        sa.Arrival + b.HeuristicMs(&b.Data.Vertices[stop], targetVertex, vehicle),
 		})
 
 		delete(rounds.MarkedStopsForTransfer, stop)
@@ -224,6 +228,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 				Arrival:      arrival,
 				Vertex:       arc.Target,
 				TransferTime: targetTransferTime,
+				Score:        arrival + b.HeuristicMs(&b.Data.Vertices[arc.Target], targetVertex, vehicle),
 			}
 
 			nodeMap[arc.Target] = targetNode
@@ -231,4 +236,8 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 			heap.Push(&queue, targetNode)
 		}
 	}
+}
+
+func (b *Bifrost) HeuristicMs(from, to *Vertex, vehicle VehicleType) uint64 {
+	return uint64(b.DistanceMs(from, to, vehicle))
 }

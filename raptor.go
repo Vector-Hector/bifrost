@@ -194,7 +194,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 				break
 			}
 
-			dist := b.DistanceWalkMs(&loc, streetVert)
+			dist := b.DistanceMs(&loc, streetVert, VehicleTypeFoot)
 
 			if dist > b.MaxStopsConnectionSeconds {
 				break
