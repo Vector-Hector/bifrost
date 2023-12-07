@@ -43,7 +43,7 @@ func TestRaptor(t *testing.T) {
 	_, err = b.Route(r, []SourceLocation{{
 		Location:  origin,
 		Departure: departureTime,
-	}}, dest, false, false)
+	}}, dest, ModeTransit, true)
 	if err != nil {
 		panic(err)
 	}

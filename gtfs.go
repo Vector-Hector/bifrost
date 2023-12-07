@@ -49,7 +49,7 @@ func getUnixDay(date string) uint32 {
 	return uint32(uint64(t.UnixMilli()) / uint64(DayInMs))
 }
 
-func (b *Bifrost) DistanceMs(from kdtree.Point, to kdtree.Point) uint32 {
+func (b *Bifrost) DistanceWalkMs(from kdtree.Point, to kdtree.Point) uint32 {
 	if from.Dimensions() != 2 || to.Dimensions() != 2 {
 		panic("invalid dimension")
 	}
@@ -107,7 +107,6 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	prog := &Progress{}
 
 	stops := make([]Vertex, stopCount)
-	stopsAsPoints := make([]kdtree.Point, stopCount)
 	stopToRoutes := make([][]StopRoutePair, stopCount)
 	stopsIndex := make(map[string]uint64, stopCount)
 
@@ -123,11 +122,6 @@ func (b *Bifrost) AddGtfs(directory string) error {
 			},
 			Longitude: stop.Longitude,
 			Latitude:  stop.Latitude,
-		}
-		stopsAsPoints[index] = &GeoPoint{
-			Latitude:  stop.Longitude,
-			Longitude: stop.Latitude,
-			VertKey:   uint64(index),
 		}
 
 		stopsIndex[stop.ID] = uint64(index)

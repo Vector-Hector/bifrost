@@ -24,8 +24,8 @@ func (b *Bifrost) ReconstructJourney(destKey uint64, lastRound int, rounds *Roun
 			continue
 		}
 
-		if arr.Trip == TripIdTransfer {
-			trip, newPos := GetTripFromTransfer(b.Data, rounds.Rounds[i], position)
+		if arr.Trip == TripIdWalk || arr.Trip == TripIdCycle || arr.Trip == TripIdCar {
+			trip, newPos := GetTripFromTransfer(b.Data, rounds.Rounds[i], position, arr.Trip)
 			position = newPos
 			trips = append(trips, trip)
 			continue
@@ -47,14 +47,21 @@ func (b *Bifrost) ReconstructJourney(destKey uint64, lastRound int, rounds *Roun
 	}
 }
 
-func GetTripFromTransfer(r *RoutingData, round map[uint64]StopArrival, destination uint64) (*fptf.Trip, uint64) {
+func GetTripFromTransfer(r *RoutingData, round map[uint64]StopArrival, destination uint64, tripType uint32) (*fptf.Trip, uint64) {
+	mode := fptf.ModeWalking
+	if tripType == TripIdCycle {
+		mode = fptf.ModeBicycle
+	} else if tripType == TripIdCar {
+		mode = fptf.ModeCar
+	}
+
 	position := destination
 	arrival := round[position]
 	path := make([]uint64, 1)
 	path[0] = position
 
 	for {
-		if arrival.Trip != TripIdTransfer {
+		if arrival.Trip != tripType {
 			break
 		}
 
@@ -97,7 +104,7 @@ func GetTripFromTransfer(r *RoutingData, round map[uint64]StopArrival, destinati
 		Departure:   dep,
 		Arrival:     arr,
 		Stopovers:   stopovers,
-		Mode:        fptf.ModeWalking,
+		Mode:        mode,
 	}
 
 	return trip, position

@@ -8,11 +8,19 @@ import (
 	"time"
 )
 
+type VehicleType uint32
+
+const (
+	VehicleTypeCar VehicleType = iota
+	VehicleTypeBike
+	VehicleTypeFoot
+)
+
 type dijkstraNode struct {
-	Arrival  uint64
-	Vertex   uint64
-	WalkTime uint32
-	Index    int // Index of the node in the heap
+	Arrival      uint64
+	Vertex       uint64
+	TransferTime uint32 // time in ms to walk or cycle to this stop
+	Index        int    // Index of the node in the heap
 }
 
 type priorityQueue []*dijkstraNode
@@ -48,11 +56,11 @@ func (pq *priorityQueue) Pop() interface{} {
 
 func (pq *priorityQueue) update(node *dijkstraNode, arrival uint64, targetWalkTime uint32) {
 	node.Arrival = arrival
-	node.WalkTime = targetWalkTime
+	node.TransferTime = targetWalkTime
 	heap.Fix(pq, node.Index)
 }
 
-func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
+func (b *Bifrost) RouteOnlyTimeIndependent(rounds *Rounds, origins []SourceKey, destKey uint64, vehicle VehicleType, debug bool) (*fptf.Journey, error) {
 	t := time.Now()
 
 	rounds.NewSession()
@@ -76,12 +84,12 @@ func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []SourceKey, destKey uin
 
 	for _, origin := range origins {
 		departure := timeToMs(origin.Departure)
-		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin}
-		rounds.MarkedStops[origin.StopKey] = true
+		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin, Vehicles: 1 << vehicle}
+		rounds.MarkedStopsForTransfer[origin.StopKey] = true
 		rounds.EarliestArrivals[origin.StopKey] = departure
 	}
 
-	b.runTransferRound(rounds, 0)
+	b.runTransferRound(rounds, 0, vehicle, true)
 
 	if debug {
 		fmt.Println("Getting transfer times took", time.Since(t))
@@ -110,14 +118,15 @@ func (b *Bifrost) RouteOnlyWalk(rounds *Rounds, origins []SourceKey, destKey uin
 	return journey, nil
 }
 
-func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
+func (b *Bifrost) runTransferRound(rounds *Rounds, current int, vehicle VehicleType, noTransferCap bool) {
 	round := rounds.Rounds[current]
 	next := rounds.Rounds[current+1]
 
 	for stop, t := range round {
 		next[stop] = StopArrival{
-			Arrival: t.Arrival,
-			Trip:    TripIdNoChange,
+			Arrival:  t.Arrival,
+			Trip:     TripIdNoChange,
+			Vehicles: t.Vehicles,
 		}
 	}
 
@@ -135,13 +144,24 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
 			continue
 		}
 
+		if sa.Vehicles&(1<<vehicle) == 0 && vehicle != VehicleTypeFoot { // foot is always allowed
+			continue
+		}
+
 		heap.Push(&queue, &dijkstraNode{
-			Arrival:  sa.Arrival,
-			Vertex:   stop,
-			WalkTime: sa.WalkTime,
+			Arrival:      sa.Arrival,
+			Vertex:       stop,
+			TransferTime: sa.TransferTime,
 		})
 
 		delete(rounds.MarkedStopsForTransfer, stop)
+	}
+
+	tripType := TripIdWalk
+	if vehicle == VehicleTypeBike {
+		tripType = TripIdCycle
+	} else if vehicle == VehicleTypeCar {
+		tripType = TripIdCar
 	}
 
 	nodeMap := make(map[uint64]*dijkstraNode)
@@ -152,13 +172,29 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
 
 		arcs := b.Data.StreetGraph[node.Vertex]
 		for _, arc := range arcs {
-			targetWalkTime := node.WalkTime + arc.Distance
+			dist := arc.WalkDistance
+			if vehicle == VehicleTypeBike {
+				dist = arc.CycleDistance
+			}
+			if vehicle == VehicleTypeCar {
+				dist = arc.CarDistance
+			}
 
-			if targetWalkTime > b.MaxWalkingMs {
+			if dist == 0 {
 				continue
 			}
 
-			arrival := node.Arrival + uint64(arc.Distance)
+			targetTransferTime := node.TransferTime + dist
+
+			if !noTransferCap && vehicle == VehicleTypeFoot && targetTransferTime > b.MaxWalkingMs {
+				continue
+			}
+
+			if !noTransferCap && vehicle == VehicleTypeBike && targetTransferTime > b.MaxCyclingMs {
+				continue
+			}
+
+			arrival := node.Arrival + uint64(dist)
 
 			old, ok := next[arc.Target]
 
@@ -167,25 +203,26 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int) {
 			}
 
 			next[arc.Target] = StopArrival{
-				Arrival:   arrival,
-				Trip:      TripIdTransfer,
-				EnterKey:  node.Vertex,
-				Departure: node.Arrival,
-				WalkTime:  targetWalkTime,
+				Arrival:      arrival,
+				Trip:         tripType,
+				EnterKey:     node.Vertex,
+				Departure:    node.Arrival,
+				TransferTime: targetTransferTime,
+				Vehicles:     1 << vehicle,
 			}
 			rounds.MarkedStops[arc.Target] = true
 			rounds.EarliestArrivals[arc.Target] = arrival
 
 			target, ok := nodeMap[arc.Target]
 			if ok {
-				queue.update(target, arrival, targetWalkTime)
+				queue.update(target, arrival, targetTransferTime)
 				continue
 			}
 
 			target = &dijkstraNode{
-				Arrival:  arrival,
-				Vertex:   arc.Target,
-				WalkTime: targetWalkTime,
+				Arrival:      arrival,
+				Vertex:       arc.Target,
+				TransferTime: targetTransferTime,
 			}
 
 			nodeMap[arc.Target] = target
