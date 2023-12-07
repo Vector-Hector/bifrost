@@ -89,7 +89,7 @@ func (b *Bifrost) RouteOnlyTimeIndependent(rounds *Rounds, origins []SourceKey, 
 		rounds.EarliestArrivals[origin.StopKey] = departure
 	}
 
-	b.runTransferRound(rounds, 0, vehicle, true)
+	b.runTransferRound(rounds, destKey, 0, vehicle, true)
 
 	if debug {
 		fmt.Println("Getting transfer times took", time.Since(t))
@@ -118,7 +118,7 @@ func (b *Bifrost) RouteOnlyTimeIndependent(rounds *Rounds, origins []SourceKey, 
 	return journey, nil
 }
 
-func (b *Bifrost) runTransferRound(rounds *Rounds, current int, vehicle VehicleType, noTransferCap bool) {
+func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, vehicle VehicleType, noTransferCap bool) {
 	round := rounds.Rounds[current]
 	next := rounds.Rounds[current+1]
 
@@ -196,9 +196,10 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int, vehicle VehicleT
 
 			arrival := node.Arrival + uint64(dist)
 
-			old, ok := next[arc.Target]
+			ea, ok := rounds.EarliestArrivals[arc.Target]
+			targetEa, targetOk := rounds.EarliestArrivals[target]
 
-			if ok && arrival >= old.Arrival {
+			if (ok && ea <= arrival) || (targetOk && targetEa <= arrival) {
 				continue
 			}
 
@@ -213,21 +214,21 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, current int, vehicle VehicleT
 			rounds.MarkedStops[arc.Target] = true
 			rounds.EarliestArrivals[arc.Target] = arrival
 
-			target, ok := nodeMap[arc.Target]
+			targetNode, ok := nodeMap[arc.Target]
 			if ok {
-				queue.update(target, arrival, targetTransferTime)
+				queue.update(targetNode, arrival, targetTransferTime)
 				continue
 			}
 
-			target = &dijkstraNode{
+			targetNode = &dijkstraNode{
 				Arrival:      arrival,
 				Vertex:       arc.Target,
 				TransferTime: targetTransferTime,
 			}
 
-			nodeMap[arc.Target] = target
+			nodeMap[arc.Target] = targetNode
 
-			heap.Push(&queue, target)
+			heap.Push(&queue, targetNode)
 		}
 	}
 }

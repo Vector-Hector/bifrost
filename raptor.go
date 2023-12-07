@@ -135,7 +135,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 			rounds.MarkedStopsForTransfer[stop] = marked
 		}
 
-		b.runTransferRound(rounds, ttsKey+1, VehicleTypeFoot, false)
+		b.runTransferRound(rounds, destKey, ttsKey+1, VehicleTypeFoot, false)
 
 		for _, sa := range rounds.Rounds[ttsKey+1] {
 			if sa.Arrival < uint64(DayInMs*2) {
@@ -175,7 +175,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 		}
 
 		// then, run a transfer round
-		b.runTransferRound(rounds, lastRound, VehicleTypeFoot, true)
+		b.runTransferRound(rounds, destKey, lastRound, VehicleTypeFoot, true)
 		lastRound++
 	}
 
