@@ -1,3 +1,5 @@
+This is a draft for the benchmark documentation. It is not yet complete.
+
 # Benchmarks
 
 We compare our routing engine to OpenTripPlanner due to its similarity in that they are both multi-modal routing
@@ -22,10 +24,3 @@ execution time that is the time it takes to finish all threads divided by number
 average execution time that is the time it takes to finish one thread divided by number of calculated routes. Note, that
 the global average execution time also includes transformation from OTP format to FPTF, but this is negligible. The used
 memory by each server is measured by the Windows task manager.
-
-## Results
-
-| Engine  | Global Average Execution Time | Local Average Execution Time | Memory Usage |
-|---------|-------------------------------|------------------------------|--------------|
-| Bifrost | 236.5ms                       | 2650.6ms                     | 8000 MB      |
-| OTP     | 869.2ms                       | 9517.4ms                     | 4026 MB      |
