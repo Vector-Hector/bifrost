@@ -23,7 +23,7 @@ func (b *Bifrost) ConnectStopsToVertices() {
 			continue // only connect stops
 		}
 
-		nearest := b.Data.VertexTree.KNN(&stop, 30)
+		nearest := b.Data.WalkableVertexTree.KNN(&stop, 30)
 
 		for _, point := range nearest {
 			streetVert := point.(*GeoPoint)
@@ -32,7 +32,7 @@ func (b *Bifrost) ConnectStopsToVertices() {
 				break
 			}
 
-			dist := b.DistanceMs(&stop, streetVert)
+			dist := b.DistanceMs(&stop, streetVert, VehicleTypeFoot)
 
 			if dist > b.MaxStopsConnectionSeconds {
 				break
@@ -44,16 +44,16 @@ func (b *Bifrost) ConnectStopsToVertices() {
 			fromLock := &locks[fromKey]
 			fromLock.Lock()
 			b.Data.StreetGraph[fromKey] = append(b.Data.StreetGraph[fromKey], Arc{
-				Target:   toKey,
-				Distance: dist,
+				Target:       toKey,
+				WalkDistance: dist,
 			})
 			fromLock.Unlock()
 
 			toLock := &locks[toKey]
 			toLock.Lock()
 			b.Data.StreetGraph[toKey] = append(b.Data.StreetGraph[toKey], Arc{
-				Target:   fromKey,
-				Distance: dist,
+				Target:       fromKey,
+				WalkDistance: dist,
 			})
 			toLock.Unlock()
 		}

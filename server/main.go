@@ -13,10 +13,10 @@ import (
 )
 
 type JourneyRequest struct {
-	Origin      *fptf.Location `json:"origin"`
-	Destination *fptf.Location `json:"destination"`
-	Departure   time.Time      `json:"departure"`
-	OnlyWalk    bool           `json:"onlyWalk"`
+	Origin      *fptf.Location      `json:"origin"`
+	Destination *fptf.Location      `json:"destination"`
+	Departure   time.Time           `json:"departure"`
+	Mode        bifrost.RoutingMode `json:"mode"`
 }
 
 type StringSlice []string
@@ -44,6 +44,7 @@ func main() {
 	flag.Var(&gtfsPath, "gtfs", "path to a gtfs zip file")
 	bifrostPath := flag.String("bifrost", "data.bifrost", "path to bifrost cache")
 	numHandlerThreads := flag.Int("threads", 12, "number of handler threads")
+	onlyBuild := flag.Bool("only-build", false, "only build the bifrost cache")
 
 	flag.Parse()
 
@@ -61,6 +62,10 @@ func main() {
 	}
 
 	fmt.Println("Raptor data loaded")
+
+	if *onlyBuild {
+		return
+	}
 
 	roundChan := make(chan *bifrost.Rounds, *numHandlerThreads)
 
@@ -108,7 +113,10 @@ func handle(c *gin.Context, b *bifrost.Bifrost, roundChan chan *bifrost.Rounds) 
 	journey, err := b.Route(rounds, []bifrost.SourceLocation{{
 		Location:  req.Origin,
 		Departure: req.Departure,
-	}}, req.Destination, req.OnlyWalk, false)
+	}}, req.Destination, req.Mode, false)
+	if err != nil {
+		panic(err)
+	}
 
 	fmt.Println("Routing took", time.Since(t))
 

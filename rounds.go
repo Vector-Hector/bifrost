@@ -9,7 +9,7 @@ type Rounds struct {
 }
 
 func (b *Bifrost) NewRounds() *Rounds {
-	rounds := make([]map[uint64]StopArrival, (b.TransferLimit+1)*2+1)
+	rounds := make([]map[uint64]StopArrival, (b.TransferLimit+1)*2+2)
 
 	for i := range rounds {
 		rounds[i] = make(map[uint64]StopArrival)
@@ -22,6 +22,18 @@ func (b *Bifrost) NewRounds() *Rounds {
 		EarliestArrivals:       make(map[uint64]uint64),
 		Queue:                  make(map[uint32]uint32, 10000),
 	}
+}
+
+type StopArrival struct {
+	Arrival uint64 // arrival time in unix ms
+
+	Trip uint32 // trip id, special TripId are defined (for example TripIdWalk)
+
+	EnterKey  uint64 // stop sequence key in route for trips, vertex key for transfers
+	Departure uint64 // departure day for trips, departure time in unix ms for transfers
+
+	TransferTime uint32 // time in ms to walk or cycle to this stop from the previous stop
+	Vehicles     uint8  // bitmask of vehicles available at this stop
 }
 
 func (r *Rounds) NewSession() {

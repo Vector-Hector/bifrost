@@ -21,25 +21,48 @@ func timeToMs(day time.Time) uint64 {
 	return uint64(day.UnixMilli())
 }
 
-func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Location, onlyWalk bool, debug bool) (*fptf.Journey, error) {
-	originKeys, err := b.matchSourceLocations(origins)
+type RoutingMode string
+
+const (
+	ModeCar     RoutingMode = "car"
+	ModeBike    RoutingMode = "bike"
+	ModeFoot    RoutingMode = "foot"
+	ModeTransit RoutingMode = "transit"
+)
+
+func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Location, mode RoutingMode, debug bool) (*fptf.Journey, error) {
+	vehicleType := VehicleTypeFoot
+	if mode == ModeCar {
+		vehicleType = VehicleTypeCar
+	} else if mode == ModeBike {
+		vehicleType = VehicleTypeBike
+	} else if mode != ModeFoot && mode != ModeTransit {
+		return nil, fmt.Errorf("unknown mode %v", mode)
+	}
+
+	originKeys, err := b.matchSourceLocations(origins, vehicleType)
 	if err != nil {
 		return nil, err
 	}
 
-	destKey, err := b.matchTargetLocation(dest)
+	destKey, err := b.matchTargetLocation(dest, vehicleType)
 	if err != nil {
 		return nil, err
 	}
 
-	if onlyWalk {
-		return b.RouteOnlyWalk(rounds, originKeys, destKey, debug)
+	if mode != ModeTransit {
+		return b.RouteOnlyTimeIndependent(rounds, originKeys, destKey, vehicleType, debug)
 	}
 
-	return b.RouteUsingKeys(rounds, originKeys, destKey, debug)
+	return b.RouteTransit(rounds, originKeys, destKey, debug)
 }
 
-func (b *Bifrost) RouteUsingKeys(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
+func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
+	// todo add vehicle support (take more of the vehicle bitmask into account, what if bicycle is taken with you on the train?)
+	// what if bicycle is taken with you on a car? what if that car is going to a train station and you take the bicycle with you on the train?
+
+	// todo investigate graph issues: some vertices are not reachable and can only be reached by choosing a close vertex as destKey instead
+
 	t := time.Now()
 
 	rounds.NewSession()
@@ -66,7 +89,7 @@ func (b *Bifrost) RouteUsingKeys(rounds *Rounds, origins []SourceKey, destKey ui
 	for _, origin := range origins {
 		departure := timeToMs(origin.Departure)
 
-		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin}
+		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin, Vehicles: 1 << VehicleTypeFoot}
 		rounds.MarkedStops[origin.StopKey] = true
 		rounds.EarliestArrivals[origin.StopKey] = departure
 	}
@@ -115,13 +138,7 @@ func (b *Bifrost) RouteUsingKeys(rounds *Rounds, origins []SourceKey, destKey ui
 			rounds.MarkedStopsForTransfer[stop] = marked
 		}
 
-		b.runTransferRound(rounds, ttsKey+1)
-
-		for _, sa := range rounds.Rounds[ttsKey+1] {
-			if sa.Arrival < uint64(DayInMs*2) {
-				panic("arrival too small")
-			}
-		}
+		b.runTransferRound(rounds, destKey, ttsKey+1, VehicleTypeFoot, false)
 
 		if debug {
 			fmt.Println("Getting transfer times took", time.Since(t))
@@ -147,6 +164,48 @@ func (b *Bifrost) RouteUsingKeys(rounds *Rounds, origins []SourceKey, destKey ui
 	}
 
 	_, ok := rounds.EarliestArrivals[destKey]
+	if !ok {
+		// add an unrestricted transfer round
+		// first, mark all vertices that are reachable already
+		for vert := range rounds.EarliestArrivals {
+			rounds.MarkedStopsForTransfer[vert] = true
+		}
+
+		// then, run a transfer round
+		b.runTransferRound(rounds, destKey, lastRound, VehicleTypeFoot, true)
+		lastRound++
+	}
+
+	_, ok = rounds.EarliestArrivals[destKey]
+	if !ok {
+		// look for very close, walkable vertices
+		loc := b.Data.Vertices[destKey]
+		nearest := b.Data.WalkableVertexTree.KNN(&loc, 30)
+
+		for _, point := range nearest {
+			streetVert := point.(*GeoPoint)
+
+			_, ok = rounds.EarliestArrivals[streetVert.VertKey]
+			if !ok {
+				continue
+			}
+
+			if !b.fastDistWithin(&loc, streetVert, b.MaxStopsConnectionSeconds) {
+				break
+			}
+
+			dist := b.DistanceMs(&loc, streetVert, VehicleTypeFoot)
+
+			if dist > b.MaxStopsConnectionSeconds {
+				break
+			}
+
+			destKey = streetVert.VertKey // replace destination with the closest reachable vertex
+			break
+		}
+	}
+
+	_, ok = rounds.EarliestArrivals[destKey]
 	if !ok {
 		return nil, fmt.Errorf("destination unreachable")
 	}
@@ -437,8 +496,15 @@ func (r *RoutingData) earliestTripBinarySearchReordered(route *Route, stopSeqKey
 	return r.earliestTripBinarySearchReordered(route, stopSeqKey, minDepartureInDay, day, reorder, left, mid)
 }
 
-func (b *Bifrost) matchSourceLocations(origins []SourceLocation) ([]SourceKey, error) {
+func (b *Bifrost) matchSourceLocations(origins []SourceLocation, vehicleToStart VehicleType) ([]SourceKey, error) {
 	originKeys := make([]SourceKey, 0)
+
+	tree := b.Data.WalkableVertexTree
+	if vehicleToStart == VehicleTypeBike {
+		tree = b.Data.CycleableVertexTree
+	} else if vehicleToStart == VehicleTypeCar {
+		tree = b.Data.CarableVertexTree
+	}
 
 	for _, origin := range origins {
 		loc := &GeoPoint{
@@ -446,39 +512,49 @@ func (b *Bifrost) matchSourceLocations(origins []SourceLocation) ([]SourceKey, e
 			Longitude: origin.Location.Longitude,
 		}
 
-		vertices := b.Data.VertexTree.KNN(loc, 10)
+		vertices := tree.KNN(loc, 30)
 
-		for i, vertex := range vertices {
-			if i != 0 && b.DistanceMs(loc, vertex.(*GeoPoint)) >= b.MaxStopsConnectionSeconds {
-				return nil, fmt.Errorf("no stop within tolerance found for location %v", loc)
-			}
+		for _, vertex := range vertices {
+			point := vertex.(*GeoPoint)
+
 			originKeys = append(originKeys, SourceKey{
-				StopKey:   vertex.(*GeoPoint).VertKey,
+				StopKey:   point.VertKey,
 				Departure: origin.Departure,
 			})
 		}
 	}
 
+	if len(originKeys) == 0 {
+		return nil, fmt.Errorf("no origin vertex found for any provided location")
+	}
+
 	return originKeys, nil
 }
 
-func (b *Bifrost) matchTargetLocation(dest *fptf.Location) (uint64, error) {
+func (b *Bifrost) matchTargetLocation(dest *fptf.Location, vehicleToReach VehicleType) (uint64, error) {
 	loc := &GeoPoint{
 		Latitude:  dest.Latitude,
 		Longitude: dest.Longitude,
 	}
 
-	vertices := b.Data.VertexTree.KNN(loc, 1)
+	tree := b.Data.WalkableVertexTree
+	if vehicleToReach == VehicleTypeBike {
+		tree = b.Data.CycleableVertexTree
+	} else if vehicleToReach == VehicleTypeCar {
+		tree = b.Data.CarableVertexTree
+	}
+
+	vertices := tree.KNN(loc, 30)
 
 	if len(vertices) == 0 {
 		return 0, fmt.Errorf("no stop within tolerance found for location %v", loc)
 	}
 
-	vert := vertices[0].(*GeoPoint)
+	for _, vert := range vertices {
+		point := vert.(*GeoPoint)
 
-	if b.DistanceMs(loc, vert) >= b.MaxStopsConnectionSeconds {
-		return 0, fmt.Errorf("no stop within tolerance found for location %v", loc)
+		return point.VertKey, nil
 	}
 
-	return vert.VertKey, nil
+	return 0, fmt.Errorf("no destination vertex found for location %v", loc)
 }

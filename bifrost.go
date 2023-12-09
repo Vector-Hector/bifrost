@@ -8,9 +8,11 @@ import (
 const DayInMs uint32 = 24 * 60 * 60 * 1000
 
 const (
-	TripIdTransfer = 0xffffffff
-	TripIdNoChange = 0xfffffffe
-	TripIdOrigin   = 0xfffffffd
+	TripIdWalk     uint32 = 0xffffffff
+	TripIdCycle    uint32 = 0xfffffffe
+	TripIdCar      uint32 = 0xfffffffd
+	TripIdNoChange uint32 = 0xfffffffc
+	TripIdOrigin   uint32 = 0xfffffffb
 
 	ArrivalTimeNotReached uint64 = 0xffffffffffffffff
 )
@@ -19,7 +21,11 @@ type Bifrost struct {
 	TransferLimit             int
 	TransferPaddingMs         uint64  // only search for trips, padded a bit after transitioning
 	WalkingSpeed              float64 // in meters per ms
-	MaxWalkingMs              uint32  // duration of walks not allowed to be higher than this when transferring
+	CycleSpeed                float64 // in meters per ms
+	CarMaxSpeed               float64 // in meters per ms
+	CarMinAvgSpeed            float64 // in meters per ms
+	MaxWalkingMs              uint32  // duration of walks not allowed to be higher than this per transfer
+	MaxCyclingMs              uint32  // duration of cycles not allowed to be higher than this per transfer
 	MaxStopsConnectionSeconds uint32  // max length of added arcs between stops and street graph in deciseconds
 
 	Data *RoutingData
@@ -27,9 +33,13 @@ type Bifrost struct {
 
 var DefaultBifrost = &Bifrost{
 	TransferLimit:             4,
-	TransferPaddingMs:         0,
+	TransferPaddingMs:         3 * 60 * 1000,
 	WalkingSpeed:              0.8 * 0.001,
+	CycleSpeed:                4.0 * 0.001,
+	CarMaxSpeed:               36.0 * 0.001,
+	CarMinAvgSpeed:            8.0 * 0.001,
 	MaxWalkingMs:              60 * 1000 * 15,
+	MaxCyclingMs:              60 * 1000 * 30,
 	MaxStopsConnectionSeconds: 60 * 1000 * 5,
 }
 
@@ -55,7 +65,9 @@ type RoutingData struct {
 	TripToRoute      []uint32            `json:"tripToRoute"` // trip index -> route index
 
 	// for finding vertices by location. points are GeoPoint
-	VertexTree *kdtree.KDTree `json:"-"`
+	WalkableVertexTree  *kdtree.KDTree `json:"-"`
+	CycleableVertexTree *kdtree.KDTree `json:"-"`
+	CarableVertexTree   *kdtree.KDTree `json:"-"`
 }
 
 func (r *RoutingData) PrintStats() {
@@ -70,24 +82,55 @@ func (r *RoutingData) PrintStats() {
 }
 
 func (r *RoutingData) RebuildVertexTree() {
-	verticesAsPoints := make([]kdtree.Point, len(r.Vertices))
+	verticesAsPoints := make([]*GeoPoint, len(r.Vertices))
 	for i, v := range r.Vertices {
 		verticesAsPoints[i] = &GeoPoint{
-			Latitude:  v.Latitude,
-			Longitude: v.Longitude,
-			VertKey:   uint64(i),
+			Latitude:       v.Latitude,
+			Longitude:      v.Longitude,
+			VertKey:        uint64(i),
+			CanBeReachedBy: 0,
 		}
 	}
 
-	r.VertexTree = kdtree.New(verticesAsPoints)
-}
+	for origin, arcs := range r.StreetGraph {
+		for _, arc := range arcs {
+			supportedVehicles := uint8(0)
+			if arc.WalkDistance > 0 {
+				supportedVehicles |= 1 << VehicleTypeFoot
+			}
 
-type StopArrival struct {
-	Arrival uint64 // arrival time in unix ms
-	Trip    uint32 // trip id, 0xffffffff specifies a transfer, 0xfffffffe specifies no change compared to previous round
+			if arc.CycleDistance > 0 {
+				supportedVehicles |= 1 << VehicleTypeBike
+			}
 
-	EnterKey  uint64 // stop sequence key in route for trips, vertex key for transfers
-	Departure uint64 // departure day for trips, departure time in unix ms for transfers
+			if arc.CarDistance > 0 {
+				supportedVehicles |= 1 << VehicleTypeCar
+			}
+
+			verticesAsPoints[origin].CanBeStartedBy |= supportedVehicles
+			verticesAsPoints[arc.Target].CanBeReachedBy |= supportedVehicles
+		}
+	}
+
+	walkable := make([]kdtree.Point, 0)
+	cycleable := make([]kdtree.Point, 0)
+	carable := make([]kdtree.Point, 0)
+
+	for _, v := range verticesAsPoints {
+		if v.CanBeReachedBy&(1<<VehicleTypeFoot) > 0 {
+			walkable = append(walkable, v)
+		}
+		if v.CanBeReachedBy&(1<<VehicleTypeBike) > 0 {
+			cycleable = append(cycleable, v)
+		}
+		if v.CanBeReachedBy&(1<<VehicleTypeCar) > 0 {
+			carable = append(carable, v)
+		}
+	}
+
+	r.WalkableVertexTree = kdtree.New(walkable)
+	r.CycleableVertexTree = kdtree.New(cycleable)
+	r.CarableVertexTree = kdtree.New(carable)
 }
 
 type StopContext struct {
@@ -117,9 +160,11 @@ func (v Vertex) Dimension(i int) float64 {
 }
 
 type GeoPoint struct {
-	Latitude  float64
-	Longitude float64
-	VertKey   uint64
+	Latitude       float64
+	Longitude      float64
+	VertKey        uint64
+	CanBeStartedBy uint8 // bitmask of vehicles that can start at this point
+	CanBeReachedBy uint8 // bitmask of vehicles that can reach this point
 }
 
 func (s *GeoPoint) Dimensions() int {
@@ -166,8 +211,10 @@ type Trip struct {
 }
 
 type Arc struct {
-	Target   uint64
-	Distance uint32 // in ms
+	Target        uint64
+	WalkDistance  uint32 // in ms
+	CycleDistance uint32 // in ms
+	CarDistance   uint32 // in ms
 }
 
 type Service struct {
@@ -181,8 +228,10 @@ type Service struct {
 
 type RouteInformation struct {
 	ShortName string
+	RouteId   string
 }
 
 type TripInformation struct {
 	Headsign string
+	TripId   string
 }
