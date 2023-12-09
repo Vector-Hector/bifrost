@@ -5,8 +5,8 @@ github.com/Vector-Hector/fptf v0.0.8 h1:45AS7Yutdlk738LCIbFIZCaYOLFw++6xKdH25WWt
 github.com/Vector-Hector/fptf v0.0.8/go.mod h1:K2IbdjtUj8Q3R17XCJZ9d/ihneVNLJ2WV/pfvAXdQbw=
 github.com/Vector-Hector/goutil v0.0.4 h1:nLtvd3ZYowPnAihJYWh+97Fb8YDMBpUHtxDNhM3ZgGU=
 github.com/Vector-Hector/goutil v0.0.4/go.mod h1:TkvDefBHOPYfI5F5WDN5DIQ9XehxIJ6du+2gEepSPqQ=
-github.com/Vector-Hector/osm2ch v1.5.3 h1:VcxdBV8DSV3W0I27w9PlG7Hatdzfy/CCugNZ7KuqIZY=
-github.com/Vector-Hector/osm2ch v1.5.3/go.mod h1:u6jAPX0eOq0+FTNijrbdKIQoN5AprtTpm7AWlEdiQtY=
+github.com/Vector-Hector/osm2ch v1.5.4 h1:1s1qgKHVoE6SRzE0sXrzEWVb7OAXxUKOOzCpaLxChPU=
+github.com/Vector-Hector/osm2ch v1.5.4/go.mod h1:u6jAPX0eOq0+FTNijrbdKIQoN5AprtTpm7AWlEdiQtY=
 github.com/artonge/go-csv-tag/v2 v2.2.0 h1:jdgQHHWm1xAqNXhHfoqgyAwah589xqmTFEC/QGKSJeA=
 github.com/artonge/go-csv-tag/v2 v2.2.0/go.mod h1:MhLKePA0uu/+2jUJ4IER31uhRV/0GsIKyrSqSRR7Mkc=
 github.com/artonge/go-gtfs v1.3.4 h1:oq2b+le5wZ1ObHNZj1foL4KfLymFCElKpFm5CwEWQq4=

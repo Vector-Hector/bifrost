@@ -2,7 +2,7 @@ module github.com/Vector-Hector/bifrost
 
 go 1.19
 
-replace github.com/LdDl/osm2ch v1.5.0 => ../osm2ch //github.com/Vector-Hector/osm2ch v1.5.3
+replace github.com/LdDl/osm2ch v1.5.0 => github.com/Vector-Hector/osm2ch v1.5.4
 
 require (
 	github.com/LdDl/osm2ch v1.5.0
