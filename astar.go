@@ -12,8 +12,8 @@ type VehicleType uint32
 
 const (
 	VehicleTypeCar VehicleType = iota
-	VehicleTypeBike
-	VehicleTypeFoot
+	VehicleTypeBicycle
+	VehicleTypeWalking
 )
 
 type dijkstraNode struct {
@@ -147,7 +147,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 			continue
 		}
 
-		if sa.Vehicles&(1<<vehicle) == 0 && vehicle != VehicleTypeFoot { // foot is always allowed
+		if sa.Vehicles&(1<<vehicle) == 0 && vehicle != VehicleTypeWalking { // foot is always allowed
 			continue
 		}
 
@@ -162,7 +162,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 	}
 
 	tripType := TripIdWalk
-	if vehicle == VehicleTypeBike {
+	if vehicle == VehicleTypeBicycle {
 		tripType = TripIdCycle
 	} else if vehicle == VehicleTypeCar {
 		tripType = TripIdCar
@@ -177,7 +177,7 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 		arcs := b.Data.StreetGraph[node.Vertex]
 		for _, arc := range arcs {
 			dist := arc.WalkDistance
-			if vehicle == VehicleTypeBike {
+			if vehicle == VehicleTypeBicycle {
 				dist = arc.CycleDistance
 			}
 			if vehicle == VehicleTypeCar {
@@ -190,11 +190,11 @@ func (b *Bifrost) runTransferRound(rounds *Rounds, target uint64, current int, v
 
 			targetTransferTime := node.TransferTime + dist
 
-			if !noTransferCap && vehicle == VehicleTypeFoot && targetTransferTime > b.MaxWalkingMs {
+			if !noTransferCap && vehicle == VehicleTypeWalking && targetTransferTime > b.MaxWalkingMs {
 				continue
 			}
 
-			if !noTransferCap && vehicle == VehicleTypeBike && targetTransferTime > b.MaxCyclingMs {
+			if !noTransferCap && vehicle == VehicleTypeBicycle && targetTransferTime > b.MaxCyclingMs {
 				continue
 			}
 

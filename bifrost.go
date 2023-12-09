@@ -96,11 +96,11 @@ func (r *RoutingData) RebuildVertexTree() {
 		for _, arc := range arcs {
 			supportedVehicles := uint8(0)
 			if arc.WalkDistance > 0 {
-				supportedVehicles |= 1 << VehicleTypeFoot
+				supportedVehicles |= 1 << VehicleTypeWalking
 			}
 
 			if arc.CycleDistance > 0 {
-				supportedVehicles |= 1 << VehicleTypeBike
+				supportedVehicles |= 1 << VehicleTypeBicycle
 			}
 
 			if arc.CarDistance > 0 {
@@ -117,10 +117,10 @@ func (r *RoutingData) RebuildVertexTree() {
 	carable := make([]kdtree.Point, 0)
 
 	for _, v := range verticesAsPoints {
-		if v.CanBeReachedBy&(1<<VehicleTypeFoot) > 0 {
+		if v.CanBeReachedBy&(1<<VehicleTypeWalking) > 0 {
 			walkable = append(walkable, v)
 		}
-		if v.CanBeReachedBy&(1<<VehicleTypeBike) > 0 {
+		if v.CanBeReachedBy&(1<<VehicleTypeBicycle) > 0 {
 			cycleable = append(cycleable, v)
 		}
 		if v.CanBeReachedBy&(1<<VehicleTypeCar) > 0 {
