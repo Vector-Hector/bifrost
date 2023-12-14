@@ -155,39 +155,69 @@ func (b *Bifrost) AddGtfs(zipFile string) error {
 
 	fmt.Println("converting services")
 
-	serviceCount, err := g.CountRows("calendar.txt")
-	if err != nil {
-		return err
+	var services []*Service
+	var servicesIndex map[string]uint32
+
+	calendarExists := g.Exists("calendar.txt")
+
+	if !calendarExists && !g.Exists("calendar_dates.txt") {
+		return fmt.Errorf("no calendar or calendar dates found")
 	}
 
-	services := make([]*Service, serviceCount)
-	servicesIndex := make(map[string]uint32, serviceCount)
-
-	prog.Reset(uint64(serviceCount))
-	err = g.IterateServices(func(index int, calendar *gtfs.Calendar) bool {
-		prog.Increment()
-		prog.Print()
-		services[index] = &Service{
-			Weekdays:          uint8(calendar.Monday) | uint8(calendar.Tuesday)<<1 | uint8(calendar.Wednesday)<<2 | uint8(calendar.Thursday)<<3 | uint8(calendar.Friday)<<4 | uint8(calendar.Saturday)<<5 | uint8(calendar.Sunday)<<6,
-			StartDay:          getUnixDay(calendar.Start),
-			EndDay:            getUnixDay(calendar.End),
-			AddedExceptions:   make([]uint32, 0),
-			RemovedExceptions: make([]uint32, 0),
+	if calendarExists {
+		serviceCount, err := g.CountRows("calendar.txt")
+		if err != nil {
+			return err
 		}
 
-		servicesIndex[calendar.ServiceID] = uint32(index)
+		services = make([]*Service, serviceCount)
+		servicesIndex = make(map[string]uint32, serviceCount)
 
-		return true
-	})
-	if err != nil {
-		return err
+		prog.Reset(uint64(serviceCount))
+		err = g.IterateServices(func(index int, calendar *gtfs.Calendar) bool {
+			prog.Increment()
+			prog.Print()
+			services[index] = &Service{
+				Weekdays:          uint8(calendar.Monday) | uint8(calendar.Tuesday)<<1 | uint8(calendar.Wednesday)<<2 | uint8(calendar.Thursday)<<3 | uint8(calendar.Friday)<<4 | uint8(calendar.Saturday)<<5 | uint8(calendar.Sunday)<<6,
+				StartDay:          getUnixDay(calendar.Start),
+				EndDay:            getUnixDay(calendar.End),
+				AddedExceptions:   make([]uint32, 0),
+				RemovedExceptions: make([]uint32, 0),
+			}
+
+			servicesIndex[calendar.ServiceID] = uint32(index)
+
+			return true
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Println()
+	} else {
+		services = make([]*Service, 0)
+		servicesIndex = make(map[string]uint32)
 	}
-	fmt.Println()
 
 	fmt.Println("iterating calendar dates")
 
 	err = g.IterateCalendarDates(func(index int, calendarDate *gtfs.CalendarDate) bool {
-		service := services[servicesIndex[calendarDate.ServiceID]]
+		var service *Service
+
+		if calendarExists {
+			service = services[servicesIndex[calendarDate.ServiceID]]
+		} else {
+			si, ok := servicesIndex[calendarDate.ServiceID]
+			if ok {
+				service = services[si]
+			} else {
+				service = &Service{
+					AddedExceptions:   make([]uint32, 0),
+					RemovedExceptions: make([]uint32, 0),
+				}
+				servicesIndex[calendarDate.ServiceID] = uint32(len(services))
+				services = append(services, service)
+			}
+		}
 
 		switch calendarDate.ExceptionType {
 		case 1:

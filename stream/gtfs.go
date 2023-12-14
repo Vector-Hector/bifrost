@@ -54,6 +54,16 @@ func (g *GTFSFile) CountRows(fileName string) (int, error) {
 	return count - 1, nil // subtract 1 for the header
 }
 
+func (g *GTFSFile) Exists(fileName string) bool {
+	for _, f := range g.Reader.File {
+		if f.Name == fileName {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (g *GTFSFile) IterateStops(handler func(int, *gtfs.Stop) bool) error {
 	return iterateCsvFile(g, "stops.txt", ',', gtfs.Stop{}, func(index int, out *gtfs.Stop) bool {
 		return handler(index, out)
