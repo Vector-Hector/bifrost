@@ -107,12 +107,17 @@ func Distance(lat1 float64, lng1 float64, lat2 float64, lng2 float64, unit ...st
 	return dist
 }
 
-func (b *Bifrost) AddGtfs(directory string) error {
+func (b *Bifrost) AddGtfs(zipFile string) error {
 	// todo merge directly instead of using a temporary struct. see AddStreetData on how it's supposed to work
 
-	directory = strings.TrimSuffix(directory, "/")
+	g, err := stream.OpenGTFS(zipFile)
+	if err != nil {
+		return err
+	}
 
-	stopCount, err := stream.CountRows(directory + "/stops.txt")
+	defer g.Close()
+
+	stopCount, err := g.CountRows("stops.txt")
 	if err != nil {
 		return err
 	}
@@ -124,7 +129,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	stopsIndex := make(map[string]uint64, stopCount)
 
 	prog.Reset(uint64(stopCount))
-	err = stream.IterateStops(directory+"/stops.txt", func(index int, stop *gtfs.Stop) bool {
+	err = g.IterateStops(func(index int, stop *gtfs.Stop) bool {
 		prog.Increment()
 		prog.Print()
 
@@ -150,7 +155,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 
 	fmt.Println("converting services")
 
-	serviceCount, err := stream.CountRows(directory + "/calendar.txt")
+	serviceCount, err := g.CountRows("calendar.txt")
 	if err != nil {
 		return err
 	}
@@ -159,7 +164,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	servicesIndex := make(map[string]uint32, serviceCount)
 
 	prog.Reset(uint64(serviceCount))
-	err = stream.IterateServices(directory+"/calendar.txt", func(index int, calendar *gtfs.Calendar) bool {
+	err = g.IterateServices(func(index int, calendar *gtfs.Calendar) bool {
 		prog.Increment()
 		prog.Print()
 		services[index] = &Service{
@@ -181,7 +186,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 
 	fmt.Println("iterating calendar dates")
 
-	err = stream.IterateCalendarDates(directory+"/calendar_dates.txt", func(index int, calendarDate *gtfs.CalendarDate) bool {
+	err = g.IterateCalendarDates(func(index int, calendarDate *gtfs.CalendarDate) bool {
 		service := services[servicesIndex[calendarDate.ServiceID]]
 
 		switch calendarDate.ExceptionType {
@@ -210,7 +215,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	fmt.Println("services", len(services))
 	fmt.Println("converting trips")
 
-	routeCount, err := stream.CountRows(directory + "/routes.txt")
+	routeCount, err := g.CountRows("routes.txt")
 	if err != nil {
 		return err
 	}
@@ -219,7 +224,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	routeInformation := make([]*RouteInformation, routeCount)
 
 	prog.Reset(uint64(routeCount))
-	err = stream.IterateRoutes(directory+"/routes.txt", func(index int, route *gtfs.Route) bool {
+	err = g.IterateRoutes(func(index int, route *gtfs.Route) bool {
 		prog.Increment()
 		prog.Print()
 
@@ -235,7 +240,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	}
 	fmt.Println()
 
-	tripCount, err := stream.CountRows(directory + "/trips.txt")
+	tripCount, err := g.CountRows("trips.txt")
 	if err != nil {
 		return err
 	}
@@ -247,7 +252,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	tripInformation := make([]*TripInformation, tripCount)
 
 	prog.Reset(uint64(tripCount))
-	err = stream.IterateTrips(directory+"/trips.txt", func(index int, trip *gtfs.Trip) bool {
+	err = g.IterateTrips(func(index int, trip *gtfs.Trip) bool {
 		prog.Increment()
 		prog.Print()
 
@@ -269,7 +274,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	fmt.Println("trips", tripCount)
 	fmt.Println("converting stop times")
 
-	stopTimeCount, err := stream.CountRows(directory + "/stop_times.txt")
+	stopTimeCount, err := g.CountRows("stop_times.txt")
 	if err != nil {
 		return err
 	}
@@ -277,7 +282,7 @@ func (b *Bifrost) AddGtfs(directory string) error {
 	stopTimes := make([]*gtfsStopTime, stopTimeCount)
 
 	prog.Reset(uint64(stopTimeCount))
-	err = stream.IterateStopTimes(directory+"/stop_times.txt", func(index int, stopTime *gtfs.StopTime) bool {
+	err = g.IterateStopTimes(func(index int, stopTime *gtfs.StopTime) bool {
 		prog.Increment()
 		prog.Print()
 

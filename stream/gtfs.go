@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"archive/zip"
 	"bufio"
 	"bytes"
 	"encoding/csv"
@@ -13,8 +14,27 @@ import (
 	"strings"
 )
 
-func CountRows(fileName string) (int, error) {
-	f, err := os.Open(fileName)
+type GTFSFile struct {
+	Reader *zip.ReadCloser
+}
+
+func (g *GTFSFile) Close() error {
+	return g.Reader.Close()
+}
+
+func OpenGTFS(path string) (*GTFSFile, error) {
+	reader, err := zip.OpenReader(path)
+	if err != nil {
+		return nil, err
+	}
+
+	return &GTFSFile{
+		Reader: reader,
+	}, nil
+}
+
+func (g *GTFSFile) CountRows(fileName string) (int, error) {
+	f, err := g.Reader.Open(fileName)
 	if err != nil {
 		return 0, err
 	}
@@ -34,44 +54,44 @@ func CountRows(fileName string) (int, error) {
 	return count - 1, nil // subtract 1 for the header
 }
 
-func IterateStops(fileName string, handler func(int, *gtfs.Stop) bool) error {
-	return iterateCsvFile(fileName, ',', gtfs.Stop{}, func(index int, out *gtfs.Stop) bool {
+func (g *GTFSFile) IterateStops(handler func(int, *gtfs.Stop) bool) error {
+	return iterateCsvFile(g, "stops.txt", ',', gtfs.Stop{}, func(index int, out *gtfs.Stop) bool {
 		return handler(index, out)
 	})
 }
 
-func IterateServices(fileName string, handler func(int, *gtfs.Calendar) bool) error {
-	return iterateCsvFile(fileName, ',', gtfs.Calendar{}, func(index int, out *gtfs.Calendar) bool {
+func (g *GTFSFile) IterateServices(handler func(int, *gtfs.Calendar) bool) error {
+	return iterateCsvFile(g, "calendar.txt", ',', gtfs.Calendar{}, func(index int, out *gtfs.Calendar) bool {
 		return handler(index, out)
 	})
 }
 
-func IterateCalendarDates(fileName string, handler func(int, *gtfs.CalendarDate) bool) error {
-	return iterateCsvFile(fileName, ',', gtfs.CalendarDate{}, func(index int, out *gtfs.CalendarDate) bool {
+func (g *GTFSFile) IterateCalendarDates(handler func(int, *gtfs.CalendarDate) bool) error {
+	return iterateCsvFile(g, "calendar_dates.txt", ',', gtfs.CalendarDate{}, func(index int, out *gtfs.CalendarDate) bool {
 		return handler(index, out)
 	})
 }
 
-func IterateRoutes(fileName string, handler func(int, *gtfs.Route) bool) error {
-	return iterateCsvFile(fileName, ',', gtfs.Route{}, func(index int, out *gtfs.Route) bool {
+func (g *GTFSFile) IterateRoutes(handler func(int, *gtfs.Route) bool) error {
+	return iterateCsvFile(g, "routes.txt", ',', gtfs.Route{}, func(index int, out *gtfs.Route) bool {
 		return handler(index, out)
 	})
 }
 
-func IterateTrips(fileName string, handler func(int, *gtfs.Trip) bool) error {
-	return iterateCsvFile(fileName, ',', gtfs.Trip{}, func(index int, out *gtfs.Trip) bool {
+func (g *GTFSFile) IterateTrips(handler func(int, *gtfs.Trip) bool) error {
+	return iterateCsvFile(g, "trips.txt", ',', gtfs.Trip{}, func(index int, out *gtfs.Trip) bool {
 		return handler(index, out)
 	})
 }
 
-func IterateStopTimes(fileName string, handler func(int, *gtfs.StopTime) bool) error {
-	return iterateCsvFile(fileName, ',', gtfs.StopTime{}, func(index int, out *gtfs.StopTime) bool {
+func (g *GTFSFile) IterateStopTimes(handler func(int, *gtfs.StopTime) bool) error {
+	return iterateCsvFile(g, "stop_times.txt", ',', gtfs.StopTime{}, func(index int, out *gtfs.StopTime) bool {
 		return handler(index, out)
 	})
 }
 
-func iterateCsvFile[T any](fileName string, comma rune, outInstance T, handler func(int, *T) bool) error {
-	f, err := os.Open(fileName)
+func iterateCsvFile[T any](g *GTFSFile, fileName string, comma rune, outInstance T, handler func(int, *T) bool) error {
+	f, err := g.Reader.Open(fileName)
 	if err != nil {
 		return err
 	}
