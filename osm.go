@@ -38,7 +38,7 @@ var bikeTags = []string{
 	"trunk",
 	"trunk_link",
 	"motorway_link",
-	
+
 	//"cycleway",
 	//"path",
 	//"footway",
@@ -369,7 +369,7 @@ func (b *Bifrost) getCarSpeed(edge *osm2ch.ExpandedEdgeComponent) float64 {
 			return b.CarMaxSpeed
 		}
 
-		speed, err := parseSpeed(tag.Value)
+		speed, err := parseSpeed(tag.Value, b.CarMaxSpeed)
 		if err != nil {
 			continue
 		}
@@ -381,12 +381,17 @@ func (b *Bifrost) getCarSpeed(edge *osm2ch.ExpandedEdgeComponent) float64 {
 }
 
 // parseSpeed parses a speed string and returns the speed in m/ms.
-func parseSpeed(speedStr string) (float64, error) {
+func parseSpeed(speedStr string, maxSpeed float64) (float64, error) {
 	if speedStr == "" {
 		return 0, fmt.Errorf("empty speed string")
 	}
 
 	speedStr = strings.TrimSpace(speedStr)
+
+	impl, err := getImplicitMaxSpeedValue(speedStr, maxSpeed)
+	if err == nil {
+		return impl, nil
+	}
 
 	if strings.HasSuffix(speedStr, " mph") {
 		num, err := strconv.Atoi(speedStr[:len(speedStr)-4])
@@ -395,7 +400,7 @@ func parseSpeed(speedStr string) (float64, error) {
 			return 0, err
 		}
 
-		return float64(num) * 0.000447, nil
+		return mph(float64(num))
 	}
 
 	num, err := strconv.Atoi(speedStr) // default is km/h
@@ -404,7 +409,7 @@ func parseSpeed(speedStr string) (float64, error) {
 		return 0, err
 	}
 
-	return float64(num) * 0.000278, nil
+	return kmph(float64(num))
 }
 
 // getCar returns the driving distance in ms for an edge. If the edge cannot be driven, 0 is returned.
