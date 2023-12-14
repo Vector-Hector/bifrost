@@ -13,10 +13,10 @@ import (
 )
 
 type JourneyRequest struct {
-	Origin      *fptf.Location      `json:"origin"`
-	Destination *fptf.Location      `json:"destination"`
-	Departure   time.Time           `json:"departure"`
-	Mode        bifrost.RoutingMode `json:"mode"`
+	Origin      *fptf.Location `json:"origin"`
+	Destination *fptf.Location `json:"destination"`
+	Departure   time.Time      `json:"departure"`
+	Modes       []fptf.Mode    `json:"modes"`
 }
 
 type StringSlice []string
@@ -113,7 +113,7 @@ func handle(c *gin.Context, b *bifrost.Bifrost, roundChan chan *bifrost.Rounds) 
 	journey, err := b.Route(rounds, []bifrost.SourceLocation{{
 		Location:  req.Origin,
 		Departure: req.Departure,
-	}}, req.Destination, req.Mode, false)
+	}}, req.Destination, req.Modes, false)
 	if err != nil {
 		panic(err)
 	}

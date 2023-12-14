@@ -21,24 +21,8 @@ func timeToMs(day time.Time) uint64 {
 	return uint64(day.UnixMilli())
 }
 
-type RoutingMode string
-
-const (
-	ModeCar     RoutingMode = "car"
-	ModeBike    RoutingMode = "bike"
-	ModeFoot    RoutingMode = "foot"
-	ModeTransit RoutingMode = "transit"
-)
-
-func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Location, mode RoutingMode, debug bool) (*fptf.Journey, error) {
-	vehicleType := VehicleTypeFoot
-	if mode == ModeCar {
-		vehicleType = VehicleTypeCar
-	} else if mode == ModeBike {
-		vehicleType = VehicleTypeBike
-	} else if mode != ModeFoot && mode != ModeTransit {
-		return nil, fmt.Errorf("unknown mode %v", mode)
-	}
+func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Location, modes []fptf.Mode, debug bool) (*fptf.Journey, error) {
+	vehicleType, isTransit := getVehicleType(modes)
 
 	originKeys, err := b.matchSourceLocations(origins, vehicleType)
 	if err != nil {
@@ -50,11 +34,29 @@ func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Loc
 		return nil, err
 	}
 
-	if mode != ModeTransit {
+	if !isTransit {
 		return b.RouteOnlyTimeIndependent(rounds, originKeys, destKey, vehicleType, debug)
 	}
 
 	return b.RouteTransit(rounds, originKeys, destKey, debug)
+}
+
+func getVehicleType(modes []fptf.Mode) (VehicleType, bool) {
+	vehicleType := VehicleTypeWalking
+
+	for _, mode := range modes {
+		if mode == fptf.ModeTrain || mode == fptf.ModeBus {
+			return 0, true
+		}
+
+		if mode == fptf.ModeBicycle {
+			vehicleType = VehicleTypeBicycle
+		} else if mode == fptf.ModeCar {
+			vehicleType = VehicleTypeCar
+		}
+	}
+
+	return vehicleType, false
 }
 
 func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint64, debug bool) (*fptf.Journey, error) {
@@ -89,7 +91,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 	for _, origin := range origins {
 		departure := timeToMs(origin.Departure)
 
-		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin, Vehicles: 1 << VehicleTypeFoot}
+		rounds.Rounds[0][origin.StopKey] = StopArrival{Arrival: departure, Trip: TripIdOrigin, Vehicles: 1 << VehicleTypeWalking}
 		rounds.MarkedStops[origin.StopKey] = true
 		rounds.EarliestArrivals[origin.StopKey] = departure
 	}
@@ -138,7 +140,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 			rounds.MarkedStopsForTransfer[stop] = marked
 		}
 
-		b.runTransferRound(rounds, destKey, ttsKey+1, VehicleTypeFoot, false)
+		b.runTransferRound(rounds, destKey, ttsKey+1, VehicleTypeWalking, false)
 
 		if debug {
 			fmt.Println("Getting transfer times took", time.Since(t))
@@ -172,7 +174,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 		}
 
 		// then, run a transfer round
-		b.runTransferRound(rounds, destKey, lastRound, VehicleTypeFoot, true)
+		b.runTransferRound(rounds, destKey, lastRound, VehicleTypeWalking, true)
 		lastRound++
 	}
 
@@ -194,7 +196,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 				break
 			}
 
-			dist := b.DistanceMs(&loc, streetVert, VehicleTypeFoot)
+			dist := b.DistanceMs(&loc, streetVert, VehicleTypeWalking)
 
 			if dist > b.MaxStopsConnectionSeconds {
 				break
@@ -500,7 +502,7 @@ func (b *Bifrost) matchSourceLocations(origins []SourceLocation, vehicleToStart 
 	originKeys := make([]SourceKey, 0)
 
 	tree := b.Data.WalkableVertexTree
-	if vehicleToStart == VehicleTypeBike {
+	if vehicleToStart == VehicleTypeBicycle {
 		tree = b.Data.CycleableVertexTree
 	} else if vehicleToStart == VehicleTypeCar {
 		tree = b.Data.CarableVertexTree
@@ -538,7 +540,7 @@ func (b *Bifrost) matchTargetLocation(dest *fptf.Location, vehicleToReach Vehicl
 	}
 
 	tree := b.Data.WalkableVertexTree
-	if vehicleToReach == VehicleTypeBike {
+	if vehicleToReach == VehicleTypeBicycle {
 		tree = b.Data.CycleableVertexTree
 	} else if vehicleToReach == VehicleTypeCar {
 		tree = b.Data.CarableVertexTree

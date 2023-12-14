@@ -32,7 +32,7 @@ func (b *Bifrost) ConnectStopsToVertices() {
 				break
 			}
 
-			dist := b.DistanceMs(&stop, streetVert, VehicleTypeFoot)
+			dist := b.DistanceMs(&stop, streetVert, VehicleTypeWalking)
 
 			if dist > b.MaxStopsConnectionSeconds {
 				break

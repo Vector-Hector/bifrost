@@ -39,7 +39,7 @@ func main() {
 
 	toBenchmark := map[string]Router{
 		"bifrost": RouteBifrost,
-		"otp":     RouteOpenTripPlanner,
+		//"otp":     RouteOpenTripPlanner,
 	}
 
 	rand.Seed(time.Now().UnixNano())

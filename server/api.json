@@ -67,14 +67,11 @@
           "format": "RFC3339",
           "example": "2023-12-12T08:30:00Z"
         },
-        "mode": {
-          "type": "string",
-          "enum": [
-            "transit",
-            "bike",
-            "foot",
-            "car"
-          ]
+        "modes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/definitions/fptf_mode
+            },
         }
       }
     },
@@ -142,18 +139,7 @@
           "example": "2023-12-12T08:30:00Z"
         },
         "mode": {
-          "type": "string",
-          "enum": [
-            "train",
-            "bus",
-            "watercraft",
-            "taxi",
-            "gondola",
-            "aircraft",
-            "car",
-            "bicycle",
-            "walking"
-          ]
+          "$ref": "#/definitions/fptf_mode"
         },
         "public": {
           "type": "boolean",
@@ -334,6 +320,20 @@
           "$ref": "#/definitions/fptf_location"
         }
       }
+    },
+    "fptf_mode": {
+      "type": "string",
+      "enum": [
+        "train",
+        "bus",
+        "watercraft",
+        "taxi",
+        "gondola",
+        "aircraft",
+        "car",
+        "bicycle",
+        "walking"
+      ]
     }
   }
 }

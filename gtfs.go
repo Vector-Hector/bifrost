@@ -67,9 +67,9 @@ func (b *Bifrost) GetMinAvgSpeed(vehicleType VehicleType) float64 {
 	switch vehicleType {
 	case VehicleTypeCar:
 		return b.CarMinAvgSpeed
-	case VehicleTypeBike:
+	case VehicleTypeBicycle:
 		return b.CycleSpeed
-	case VehicleTypeFoot:
+	case VehicleTypeWalking:
 		return b.WalkingSpeed
 	default:
 		panic("invalid vehicle type")
