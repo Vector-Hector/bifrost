@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/klauspost/compress/zstd"
 	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -104,6 +105,13 @@ func (b *Bifrost) AddBifrostData(fileName string) {
 }
 
 func (b *Bifrost) WriteBifrostData(fileName string) {
+	// create directory if not exists
+	directory := filepath.Dir(fileName)
+	err := os.MkdirAll(directory, os.ModePerm)
+	if err != nil {
+		panic(err)
+	}
+
 	f, err := os.Create(fileName)
 	if err != nil {
 		panic(err)
