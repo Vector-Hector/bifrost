@@ -47,6 +47,9 @@ func RouteOpenTripPlanner(from *fptf.Location, to *fptf.Location, date time.Time
                     gtfsId
                 }
                 from {
+					stop {
+						gtfsId
+					}
                     name
                     lat
                     lon
@@ -54,6 +57,9 @@ func RouteOpenTripPlanner(from *fptf.Location, to *fptf.Location, date time.Time
                     arrivalTime
                 }
                 to {
+					stop {
+						gtfsId
+					}
                     name
                     lat
                     lon
@@ -65,9 +71,16 @@ func RouteOpenTripPlanner(from *fptf.Location, to *fptf.Location, date time.Time
                     longName
                     shortName
                 }
-                legGeometry {
-                    points
-                }
+				intermediatePlaces {
+					stop {
+						gtfsId
+					}
+					name
+					lon
+					lat
+					departureTime
+					arrivalTime
+				}
             }
         }
     }
