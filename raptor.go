@@ -339,9 +339,6 @@ func (b *Bifrost) runRaptorRound(rounds *Rounds, target uint64, current int, deb
 
 func (r *RoutingData) tripRunsOnDay(trip *Trip, day uint32) bool {
 	service := r.Services[trip.Service]
-	if day < service.StartDay || day > service.EndDay {
-		return false
-	}
 
 	if daysSliceContains(service.RemovedExceptions, day) {
 		return false
@@ -349,6 +346,10 @@ func (r *RoutingData) tripRunsOnDay(trip *Trip, day uint32) bool {
 
 	if daysSliceContains(service.AddedExceptions, day) {
 		return true
+	}
+
+	if day < service.StartDay || day > service.EndDay {
+		return false
 	}
 
 	// day is relative to unix epoch, which was a thursday
