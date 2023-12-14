@@ -68,10 +68,26 @@ func main() {
 		return
 	}
 
-	roundChan := make(chan *bifrost.Rounds, *numHandlerThreads)
+	const roundChanSize = 200
+
+	roundChan := make(chan *bifrost.Rounds, roundChanSize)
+
+	for i := 0; i < roundChanSize; i++ {
+		roundChan <- b.NewRounds()
+	}
+
+	if *numHandlerThreads < 1 {
+		*numHandlerThreads = 1
+	}
+
+	if *numHandlerThreads > roundChanSize {
+		*numHandlerThreads = roundChanSize
+	}
+
+	threadChan := make(chan bool, *numHandlerThreads)
 
 	for i := 0; i < *numHandlerThreads; i++ {
-		roundChan <- b.NewRounds()
+		threadChan <- true
 	}
 
 	fmt.Println("Startup took", time.Since(start))
@@ -79,6 +95,12 @@ func main() {
 	engine := gin.Default()
 
 	engine.POST("/bifrost", func(c *gin.Context) {
+		<-threadChan
+
+		defer func() {
+			threadChan <- true
+		}()
+
 		handle(c, b, roundChan)
 	})
 
@@ -99,7 +121,7 @@ func handle(c *gin.Context, b *bifrost.Bifrost, roundChan chan *bifrost.Rounds) 
 
 			debug.PrintStack()
 
-			c.String(500, "Internal server error")
+			c.String(500, "Internal server error: %v", r)
 		}
 	}()
 
