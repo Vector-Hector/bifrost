@@ -212,7 +212,12 @@ func GetTripFromTrip(r *RoutingData, round map[uint64]StopArrival, arrival StopA
 func (b *Bifrost) addSourceAndDestination(journey *fptf.Journey, sources []SourceLocation, dest *fptf.Location) {
 	b.addJourneyDestination(journey, dest)
 
-	origin := journey.GetOrigin().GetLocation()
+	originStopStation := journey.GetOrigin()
+	if originStopStation == nil {
+		return
+	}
+
+	origin := originStopStation.GetLocation()
 	if origin == nil {
 		return
 	}
