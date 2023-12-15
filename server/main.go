@@ -101,7 +101,7 @@ func main() {
 			threadChan <- true
 		}()
 
-		handle(c, b, roundChan)
+		handle(c, b)
 	})
 
 	err = engine.Run(":8090")
@@ -110,12 +110,8 @@ func main() {
 	}
 }
 
-func handle(c *gin.Context, b *bifrost.Bifrost, roundChan chan *bifrost.Rounds) {
-	rounds := <-roundChan
-
+func handle(c *gin.Context, b *bifrost.Bifrost) {
 	defer func() {
-		roundChan <- rounds
-
 		if r := recover(); r != nil {
 			fmt.Println("Recovered in f", r)
 
@@ -161,6 +157,8 @@ func handle(c *gin.Context, b *bifrost.Bifrost, roundChan chan *bifrost.Rounds) 
 	}
 
 	t := time.Now()
+
+	rounds := b.NewRounds()
 
 	journey, err := b.Route(rounds, []bifrost.SourceLocation{{
 		Location:  req.Origin,
