@@ -220,7 +220,7 @@ func (b *Bifrost) RouteTransit(rounds *Rounds, origins []SourceKey, destKey uint
 
 	_, ok = rounds.EarliestArrivals[destKey]
 	if !ok {
-		return nil, fmt.Errorf("destination unreachable")
+		return nil, NoRouteError(true)
 	}
 
 	journey := b.ReconstructJourney(destKey, lastRound, rounds)

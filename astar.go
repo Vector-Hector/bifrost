@@ -98,7 +98,7 @@ func (b *Bifrost) RouteOnlyTimeIndependent(rounds *Rounds, origins []SourceKey, 
 
 	_, ok := rounds.EarliestArrivals[destKey]
 	if !ok {
-		panic("destination unreachable")
+		panic(NoRouteError(true))
 	}
 
 	journey := b.ReconstructJourney(destKey, 1, rounds)

@@ -37,6 +37,19 @@ func (s *StringSlice) Set(value string) error {
 	return nil
 }
 
+func SemaphoreMiddleware(maxConcurrentRequests int) gin.HandlerFunc {
+	semaphore := make(chan bool, maxConcurrentRequests)
+
+	return func(c *gin.Context) {
+		semaphore <- true
+		defer func() {
+			<-semaphore
+		}()
+
+		c.Next()
+	}
+}
+
 func main() {
 	var osmPath StringSlice
 	var gtfsPath StringSlice
@@ -84,23 +97,13 @@ func main() {
 		*numHandlerThreads = roundChanSize
 	}
 
-	threadChan := make(chan bool, *numHandlerThreads)
-
-	for i := 0; i < *numHandlerThreads; i++ {
-		threadChan <- true
-	}
-
 	fmt.Println("Startup took", time.Since(start))
 
 	engine := gin.Default()
 
+	engine.Use(SemaphoreMiddleware(*numHandlerThreads))
+
 	engine.POST("/bifrost", func(c *gin.Context) {
-		<-threadChan
-
-		defer func() {
-			threadChan <- true
-		}()
-
 		handle(c, b)
 	})
 
@@ -112,13 +115,24 @@ func main() {
 
 func handle(c *gin.Context, b *bifrost.Bifrost) {
 	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("Recovered in f", r)
+		r := recover()
 
-			debug.PrintStack()
-
-			c.String(500, "Internal server error: %v", r)
+		if r == nil {
+			return
 		}
+
+		if _, ok := r.(bifrost.NoRouteError); ok {
+			c.JSON(404, gin.H{
+				"error": "no route found",
+			})
+			return
+		}
+
+		fmt.Println("Recovered in f", r)
+
+		debug.PrintStack()
+
+		c.String(500, "Internal server error: %v", r)
 	}()
 
 	req := &JourneyRequest{}
