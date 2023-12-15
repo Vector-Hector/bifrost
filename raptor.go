@@ -531,9 +531,11 @@ func (b *Bifrost) matchSourceLocations(origins []SourceLocation, vehicleToStart 
 		for _, vertex := range vertices {
 			point := vertex.(*GeoPoint)
 
+			dist := b.DistanceMs(loc, point, vehicleToStart)
+
 			originKeys = append(originKeys, SourceKey{
 				StopKey:   point.VertKey,
-				Departure: origin.Departure,
+				Departure: origin.Departure.Add(time.Duration(dist) * time.Millisecond),
 			})
 		}
 	}

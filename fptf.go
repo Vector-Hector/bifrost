@@ -258,10 +258,17 @@ func (b *Bifrost) addJourneyOrigin(journey *fptf.Journey, origin *fptf.Location)
 	}
 
 	vehicleType := VehicleTypeWalking
-	if firstTrip.Mode == fptf.ModeBicycle {
+	willAddTrip := true
+
+	if firstTrip.Mode == fptf.ModeWalking {
+		vehicleType = VehicleTypeWalking
+		willAddTrip = false
+	} else if firstTrip.Mode == fptf.ModeBicycle {
 		vehicleType = VehicleTypeBicycle
+		willAddTrip = false
 	} else if firstTrip.Mode == fptf.ModeCar {
 		vehicleType = VehicleTypeCar
+		willAddTrip = false
 	}
 
 	dist := uint64(b.DistanceMs(&GeoPoint{
@@ -272,7 +279,12 @@ func (b *Bifrost) addJourneyOrigin(journey *fptf.Journey, origin *fptf.Location)
 		Longitude: journeyOriginLoc.Longitude,
 	}, vehicleType))
 
-	dist += b.TransferPaddingMs
+	pad := b.TransferPaddingMs
+	if !willAddTrip {
+		pad = 0
+	}
+
+	dist += pad
 
 	journeyDep := journey.GetDeparture()
 	journeyDepDelay := journey.GetDepartureDelay()
@@ -281,7 +293,7 @@ func (b *Bifrost) addJourneyOrigin(journey *fptf.Journey, origin *fptf.Location)
 	}
 
 	newDep := journeyDep.Add(-time.Duration(dist) * time.Millisecond)
-	newArrAtOrigin := journeyDep.Add(-time.Duration(b.TransferPaddingMs) * time.Millisecond)
+	newArrAtOrigin := journeyDep.Add(-time.Duration(pad) * time.Millisecond)
 	newOrigin := &fptf.StopStation{
 		Station: &fptf.Station{
 			Name: "origin",
@@ -292,7 +304,7 @@ func (b *Bifrost) addJourneyOrigin(journey *fptf.Journey, origin *fptf.Location)
 		},
 	}
 
-	if firstTrip.Mode == fptf.ModeWalking || firstTrip.Mode == fptf.ModeBicycle || firstTrip.Mode == fptf.ModeCar {
+	if !willAddTrip {
 		addTripOrigin(firstTrip, newOrigin, newDep, newArrAtOrigin)
 		return
 	}
