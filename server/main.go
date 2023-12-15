@@ -37,6 +37,19 @@ func (s *StringSlice) Set(value string) error {
 	return nil
 }
 
+func SemaphoreMiddleware(maxConcurrentRequests int) gin.HandlerFunc {
+	semaphore := make(chan bool, maxConcurrentRequests)
+
+	return func(c *gin.Context) {
+		semaphore <- true
+		defer func() {
+			<-semaphore
+		}()
+
+		c.Next()
+	}
+}
+
 func main() {
 	var osmPath StringSlice
 	var gtfsPath StringSlice
@@ -84,23 +97,13 @@ func main() {
 		*numHandlerThreads = roundChanSize
 	}
 
-	threadChan := make(chan bool, *numHandlerThreads)
-
-	for i := 0; i < *numHandlerThreads; i++ {
-		threadChan <- true
-	}
-
 	fmt.Println("Startup took", time.Since(start))
 
 	engine := gin.Default()
 
+	engine.Use(SemaphoreMiddleware(*numHandlerThreads))
+
 	engine.POST("/bifrost", func(c *gin.Context) {
-		<-threadChan
-
-		defer func() {
-			threadChan <- true
-		}()
-
 		handle(c, b)
 	})
 
