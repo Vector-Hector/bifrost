@@ -115,13 +115,24 @@ func main() {
 
 func handle(c *gin.Context, b *bifrost.Bifrost) {
 	defer func() {
-		if r := recover(); r != nil {
-			fmt.Println("Recovered in f", r)
+		r := recover()
 
-			debug.PrintStack()
-
-			c.String(500, "Internal server error: %v", r)
+		if r == nil {
+			return
 		}
+
+		if _, ok := r.(bifrost.NoRouteError); ok {
+			c.JSON(404, gin.H{
+				"error": "no route found",
+			})
+			return
+		}
+
+		fmt.Println("Recovered in f", r)
+
+		debug.PrintStack()
+
+		c.String(500, "Internal server error: %v", r)
 	}()
 
 	req := &JourneyRequest{}
