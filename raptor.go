@@ -34,11 +34,22 @@ func (b *Bifrost) Route(rounds *Rounds, origins []SourceLocation, dest *fptf.Loc
 		return nil, err
 	}
 
+	var journey *fptf.Journey
+
 	if !isTransit {
-		return b.RouteOnlyTimeIndependent(rounds, originKeys, destKey, vehicleType, debug)
+		journey, err = b.RouteOnlyTimeIndependent(rounds, originKeys, destKey, vehicleType, debug)
+	} else {
+		journey, err = b.RouteTransit(rounds, originKeys, destKey, debug)
 	}
 
-	return b.RouteTransit(rounds, originKeys, destKey, debug)
+	if err != nil {
+		return nil, err
+	}
+
+	b.addSourceAndDestination(journey, origins, dest)
+
+	return journey, nil
+
 }
 
 func getVehicleType(modes []fptf.Mode) (VehicleType, bool) {
@@ -520,9 +531,11 @@ func (b *Bifrost) matchSourceLocations(origins []SourceLocation, vehicleToStart 
 		for _, vertex := range vertices {
 			point := vertex.(*GeoPoint)
 
+			dist := b.DistanceMs(loc, point, vehicleToStart)
+
 			originKeys = append(originKeys, SourceKey{
 				StopKey:   point.VertKey,
-				Departure: origin.Departure,
+				Departure: origin.Departure.Add(time.Duration(dist) * time.Millisecond),
 			})
 		}
 	}

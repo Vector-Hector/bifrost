@@ -208,3 +208,211 @@ func GetTripFromTrip(r *RoutingData, round map[uint64]StopArrival, arrival StopA
 
 	return result, route.Stops[enterKey]
 }
+
+func (b *Bifrost) addSourceAndDestination(journey *fptf.Journey, sources []SourceLocation, dest *fptf.Location) {
+	b.addJourneyDestination(journey, dest)
+
+	origin := journey.GetOrigin().GetLocation()
+	if origin == nil {
+		return
+	}
+
+	originPoint := &GeoPoint{
+		Latitude:  origin.Latitude,
+		Longitude: origin.Longitude,
+	}
+
+	minSourceDistance := uint32(0)
+	minSourceKey := -1
+
+	for i, source := range sources {
+		distance := b.DistanceMs(&GeoPoint{
+			Latitude:  source.Location.Latitude,
+			Longitude: source.Location.Longitude,
+		}, originPoint, VehicleTypeWalking)
+
+		if minSourceKey == -1 || distance < minSourceDistance {
+			minSourceDistance = distance
+			minSourceKey = i
+		}
+	}
+
+	if minSourceKey == -1 {
+		return
+	}
+
+	b.addJourneyOrigin(journey, sources[minSourceKey].Location)
+}
+
+func (b *Bifrost) addJourneyOrigin(journey *fptf.Journey, origin *fptf.Location) {
+	firstTrip := journey.GetFirstTrip()
+	if firstTrip == nil {
+		return
+	}
+
+	journeyOrigin := journey.GetOrigin()
+	journeyOriginLoc := journey.GetOrigin().GetLocation()
+
+	if journeyOriginLoc == nil {
+		return
+	}
+
+	vehicleType := VehicleTypeWalking
+	willAddTrip := true
+
+	if firstTrip.Mode == fptf.ModeWalking {
+		vehicleType = VehicleTypeWalking
+		willAddTrip = false
+	} else if firstTrip.Mode == fptf.ModeBicycle {
+		vehicleType = VehicleTypeBicycle
+		willAddTrip = false
+	} else if firstTrip.Mode == fptf.ModeCar {
+		vehicleType = VehicleTypeCar
+		willAddTrip = false
+	}
+
+	dist := uint64(b.DistanceMs(&GeoPoint{
+		Latitude:  origin.Latitude,
+		Longitude: origin.Longitude,
+	}, &GeoPoint{
+		Latitude:  journeyOriginLoc.Latitude,
+		Longitude: journeyOriginLoc.Longitude,
+	}, vehicleType))
+
+	pad := b.TransferPaddingMs
+	if !willAddTrip {
+		pad = 0
+	}
+
+	dist += pad
+
+	journeyDep := journey.GetDeparture()
+	journeyDepDelay := journey.GetDepartureDelay()
+	if journeyDepDelay != nil {
+		journeyDep = journeyDep.Add(time.Duration(*journeyDepDelay) * time.Second)
+	}
+
+	newDep := journeyDep.Add(-time.Duration(dist) * time.Millisecond)
+	newArrAtOrigin := journeyDep.Add(-time.Duration(pad) * time.Millisecond)
+	newOrigin := &fptf.StopStation{
+		Station: &fptf.Station{
+			Name: "origin",
+			Location: &fptf.Location{
+				Latitude:  origin.Latitude,
+				Longitude: origin.Longitude,
+			},
+		},
+	}
+
+	if !willAddTrip {
+		addTripOrigin(firstTrip, newOrigin, newDep, newArrAtOrigin)
+		return
+	}
+
+	// create new walk trip
+	walkTrip := &fptf.Trip{
+		Origin:      newOrigin,
+		Destination: journeyOrigin,
+		Departure:   fptf.TimeNullable{Time: newDep},
+		Arrival:     fptf.TimeNullable{Time: newArrAtOrigin},
+		Stopovers: []*fptf.Stopover{{
+			StopStation: newOrigin,
+			Departure:   fptf.TimeNullable{Time: newDep},
+		}, {
+			StopStation: journeyOrigin,
+			Arrival:     fptf.TimeNullable{Time: newArrAtOrigin},
+		}},
+		Mode: fptf.ModeWalking,
+	}
+
+	journey.Trips = append([]*fptf.Trip{walkTrip}, journey.Trips...)
+}
+
+func addTripOrigin(trip *fptf.Trip, newOrigin *fptf.StopStation, newDep time.Time, newArrAtOrigin time.Time) {
+	trip.Origin = newOrigin
+	trip.Departure = fptf.TimeNullable{Time: newDep}
+	trip.Stopovers = append([]*fptf.Stopover{{
+		StopStation: newOrigin,
+		Departure:   fptf.TimeNullable{Time: newDep},
+	}}, trip.Stopovers...)
+	trip.Stopovers[1].Arrival = fptf.TimeNullable{Time: newArrAtOrigin}
+}
+
+func (b *Bifrost) addJourneyDestination(journey *fptf.Journey, dest *fptf.Location) {
+	lastTrip := journey.GetLastTrip()
+	if lastTrip == nil {
+		return
+	}
+
+	journeyDest := journey.GetDestination()
+	journeyDestLoc := journey.GetDestination().GetLocation()
+
+	if journeyDestLoc == nil {
+		return
+	}
+
+	vehicleType := VehicleTypeWalking
+	if lastTrip.Mode == fptf.ModeBicycle {
+		vehicleType = VehicleTypeBicycle
+	} else if lastTrip.Mode == fptf.ModeCar {
+		vehicleType = VehicleTypeCar
+	}
+
+	dist := uint64(b.DistanceMs(&GeoPoint{
+		Latitude:  dest.Latitude,
+		Longitude: dest.Longitude,
+	}, &GeoPoint{
+		Latitude:  journeyDestLoc.Latitude,
+		Longitude: journeyDestLoc.Longitude,
+	}, vehicleType))
+
+	journeyArr := journey.GetArrival()
+	journeyArrDelay := journey.GetArrivalDelay()
+	if journeyArrDelay != nil {
+		journeyArr = journeyArr.Add(time.Duration(*journeyArrDelay) * time.Second)
+	}
+
+	newArr := journeyArr.Add(time.Duration(dist) * time.Millisecond)
+	newDest := &fptf.StopStation{
+		Station: &fptf.Station{
+			Name: "destination",
+			Location: &fptf.Location{
+				Latitude:  dest.Latitude,
+				Longitude: dest.Longitude,
+			},
+		},
+	}
+
+	if lastTrip.Mode == fptf.ModeWalking || lastTrip.Mode == fptf.ModeBicycle || lastTrip.Mode == fptf.ModeCar {
+		addTripDestination(lastTrip, newDest, newArr, journeyArr)
+		return
+	}
+
+	// create new walk trip
+	walkTrip := &fptf.Trip{
+		Origin:      journeyDest,
+		Destination: newDest,
+		Departure:   fptf.TimeNullable{Time: journeyArr},
+		Arrival:     fptf.TimeNullable{Time: newArr},
+		Stopovers: []*fptf.Stopover{{
+			StopStation: journeyDest,
+			Departure:   fptf.TimeNullable{Time: journeyArr},
+		}, {
+			StopStation: newDest,
+			Arrival:     fptf.TimeNullable{Time: newArr},
+		}},
+		Mode: fptf.ModeWalking,
+	}
+
+	journey.Trips = append(journey.Trips, walkTrip)
+}
+
+func addTripDestination(trip *fptf.Trip, newDest *fptf.StopStation, newArr time.Time, journeyArr time.Time) {
+	trip.Destination = newDest
+	trip.Arrival = fptf.TimeNullable{Time: newArr}
+	trip.Stopovers = append(trip.Stopovers, &fptf.Stopover{
+		StopStation: newDest,
+		Arrival:     fptf.TimeNullable{Time: newArr},
+	})
+	trip.Stopovers[len(trip.Stopovers)-2].Departure = fptf.TimeNullable{Time: journeyArr}
+}
