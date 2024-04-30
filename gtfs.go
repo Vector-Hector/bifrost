@@ -112,7 +112,7 @@ func (b *Bifrost) AddGtfs(zipFile string) error {
 
 	g, err := stream.OpenGTFS(zipFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("error opening gtfs stream: %w", err)
 	}
 
 	defer g.Close()

@@ -20,7 +20,7 @@ environment variable `CGO_ENABLED=0` before building.
 Please prepare at least one GTFS and one OSM file. After that, run:
 
 ```bash
-go run server/main.go -gtfs data/mvv/gtfs/ -osm data/mvv/osm/oberbayern-latest.osm.pbf -bifrost data/mvv/munich.bifrost
+go run server/main.go -gtfs data/mvv/gtfs.zip -osm data/mvv/osm/oberbayern-latest.osm.pbf -bifrost data/mvv/munich.bifrost
 ```
 
 This will start a server on port 8090. You can query it with http requests. See [here](server/api.json) for the api
